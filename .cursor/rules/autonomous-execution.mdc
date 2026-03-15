@@ -1,0 +1,16 @@
+---
+description: Execute obvious next steps; ask only for significant decisions
+alwaysApply: true
+---
+
+# Autonomous Execution
+
+- Default to implementation, not permission-seeking, when the next step is obvious from context.
+- Do not ask follow-up questions for routine extensions of the current task (for example: wiring success/error UI feedback, adding loading states, running obvious lint/test checks).
+- Ask follow-up questions only when a decision is materially significant, such as:
+  - Product or behavior ambiguity that changes user-visible outcomes
+  - Architectural trade-offs with long-term impact
+  - Security, privacy, compliance, or data-loss risk
+  - Destructive, irreversible, or environment-affecting operations
+- If blocked by missing information, make the safest reasonable assumption, proceed, and clearly state the assumption in the final update.
+- Prefer complete end-to-end delivery in one pass: implement, verify, and report outcomes.

@@ -1,0 +1,14 @@
+---
+description: Staff-level engineering standards for architecture, tests, and docs
+alwaysApply: true
+---
+
+# Staff Engineering Quality Bar
+
+- Make changes with a maintainable architecture first: clear boundaries, cohesive modules, minimal coupling, and explicit error handling.
+- Prefer solutions that reduce long-term complexity over quick local fixes when scope permits.
+- Add or update tests for behavior changes; target at least 80% coverage for touched or newly added logic where practical.
+- If 80% coverage is not practical in the current task, explain why and identify the highest-value missing tests.
+- Keep documentation current for user-facing behavior, configuration, APIs, and operational workflows.
+- Include concise rationale in PR/summary notes: why the change was made, what trade-offs were chosen, and how it was verified.
+- If you think a request is wrong, missing context, or you know a better approach, STOP. Prompt the user with your idea and work in question/answer mode to arrive at a mutually agreed conclusion.

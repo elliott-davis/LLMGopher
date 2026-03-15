@@ -1,0 +1,93 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  labels:
+    app: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: llmgopher:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: LLMGOPHER_LISTEN_ADDR
+              value: ":8080"
+            - name: LLMGOPHER_REDIS_ENABLED
+              value: "true"
+            - name: LLMGOPHER_REDIS_ADDR
+              value: "redis:6379"
+
+            - name: LLMGOPHER_POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: llmgopher-secrets
+                  key: postgres-dsn
+            - name: LLMGOPHER_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: llmgopher-secrets
+                  key: redis-password
+            - name: LLMGOPHER_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llmgopher-secrets
+                  key: openai-api-key
+            - name: LLMGOPHER_ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llmgopher-secrets
+                  key: anthropic-api-key
+            - name: LLMGOPHER_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: llmgopher-secrets
+                  key: api-keys
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  labels:
+    app: gateway
+spec:
+  type: NodePort
+  selector:
+    app: gateway
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30080
+      protocol: TCP

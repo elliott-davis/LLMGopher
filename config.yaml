@@ -1,0 +1,39 @@
+# LLMGopher Gateway — default configuration for local development.
+# Values here can be overridden by environment variables (LLMGOPHER_* prefix)
+# or CLI flags. See: gateway --help
+
+listen-addr: ":8080"
+
+server-read-timeout: 30s
+server-write-timeout: 120s
+server-idle-timeout: 60s
+server-shutdown-timeout: 15s
+
+# PostgreSQL
+postgres-dsn: "postgres://llmgopher:localdev@localhost:5432/llmgopher?sslmode=disable"
+postgres-max-open-conns: 25
+postgres-max-idle-conns: 5
+postgres-conn-max-lifetime: 5m
+
+# Redis (optional — set to true for distributed rate limiting)
+redis-enabled: true
+redis-addr: "localhost:6379"
+redis-password: "localdevredis"
+redis-db: 0
+
+# Auth — comma-separated KEY:ID pairs
+api-keys: "sk-test-key-1:key-001,sk-test-key-2:key-002"
+
+# Guardrails (leave empty to disable)
+guardrail-endpoint: ""
+guardrail-timeout: 5s
+
+# Rate limiting
+rate-limit-rps: 60
+rate-limit-burst: 10
+
+# LLM Provider API keys (use real keys or leave as dummy for local testing)
+openai-api-key: "sk-local-fake-openai-key-000000000000"
+openai-base-url: "https://api.openai.com"
+anthropic-api-key: "sk-ant-local-fake-anthropic-key-0000"
+anthropic-base-url: "https://api.anthropic.com"

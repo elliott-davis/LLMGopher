@@ -1,0 +1,69 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: llmgopher
+      POSTGRES_PASSWORD: localdev
+      POSTGRES_DB: llmgopher
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llmgopher"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "localdevredis"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "localdevredis", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  gateway:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      LLMGOPHER_LISTEN_ADDR: ":8080"
+      LLMGOPHER_POSTGRES_DSN: "postgres://llmgopher:localdev@postgres:5432/llmgopher?sslmode=disable"
+      LLMGOPHER_REDIS_ENABLED: "true"
+      LLMGOPHER_REDIS_ADDR: "redis:6379"
+      LLMGOPHER_REDIS_PASSWORD: "localdevredis"
+      LLMGOPHER_API_KEYS: "sk-test-key-1:key-001,sk-test-key-2:key-002"
+      LLMGOPHER_OPENAI_API_KEY: "sk-local-fake-openai-key-000000000000"
+      LLMGOPHER_ANTHROPIC_API_KEY: "sk-ant-local-fake-anthropic-key-0000"
+    volumes:
+      - ./gen-lang-client-0088272616-f4778912caae.json:/secrets/gcp-sa.json:ro
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    environment:
+      WATCHPACK_POLLING: "true"
+      WATCHPACK_POLLING_INTERVAL: "1000"
+    volumes:
+      - ./ui:/app
+      - /app/node_modules
+    depends_on:
+      - gateway
+
+volumes:
+  pgdata:
