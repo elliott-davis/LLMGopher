@@ -7,6 +7,7 @@ import (
 
 // AuditEntry captures the metadata for a single LLM request lifecycle.
 type AuditEntry struct {
+	ID           int64
 	RequestID    string
 	APIKeyID     string
 	Model        string

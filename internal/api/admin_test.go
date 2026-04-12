@@ -74,6 +74,166 @@ func TestHandleGetProviders_EmptyCache_ReturnsEmptyArray(t *testing.T) {
 	}
 }
 
+func TestHandleGetAuditLog_NilDB_ReturnsServiceUnavailable(t *testing.T) {
+	handler := api.HandleGetAuditLog(nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/audit", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestHandleGetAuditLog_InvalidLimit_ReturnsBadRequest(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleGetAuditLog(db)
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/audit?limit=oops", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleGetAuditLog_EmptyResult_ReturnsEmptyData(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleGetAuditLog(db)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM audit_log`)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT id, request_id, api_key_id, model, provider,\s+prompt_tokens, output_tokens, total_tokens, cost_usd, status_code, latency_ms, streaming, error_message, created_at\s+FROM audit_log\s+ORDER BY created_at DESC, id DESC\s+LIMIT \$1 OFFSET \$2`).
+		WithArgs(100, 0).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "request_id", "api_key_id", "model", "provider",
+			"prompt_tokens", "output_tokens", "total_tokens",
+			"cost_usd", "status_code", "latency_ms", "streaming", "error_message", "created_at",
+		}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/audit", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var payload struct {
+		Data   []any `json:"data"`
+		Total  int   `json:"total"`
+		Limit  int   `json:"limit"`
+		Offset int   `json:"offset"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Data == nil {
+		t.Fatal("data should be an empty array, got null")
+	}
+	if len(payload.Data) != 0 {
+		t.Fatalf("data length = %d, want 0", len(payload.Data))
+	}
+	if payload.Total != 0 || payload.Limit != 100 || payload.Offset != 0 {
+		t.Fatalf("pagination = (%d,%d,%d), want (0,100,0)", payload.Total, payload.Limit, payload.Offset)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestHandleGetAuditLog_Success_CapsLimit(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleGetAuditLog(db)
+	from := time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2025, time.January, 2, 0, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery(regexp.QuoteMeta(
+		`SELECT count(*) FROM audit_log WHERE api_key_id = $1 AND model = $2 AND provider = $3 AND status_code < 400 AND created_at >= $4 AND created_at <= $5`,
+	)).
+		WithArgs("key-001", "gpt-4o", "openai", from, to).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	mock.ExpectQuery(`SELECT id, request_id, api_key_id, model, provider,\s+prompt_tokens, output_tokens, total_tokens, cost_usd, status_code, latency_ms, streaming, error_message, created_at\s+FROM audit_log WHERE api_key_id = \$1 AND model = \$2 AND provider = \$3 AND status_code < 400 AND created_at >= \$4 AND created_at <= \$5\s+ORDER BY created_at DESC, id DESC\s+LIMIT \$6 OFFSET \$7`).
+		WithArgs("key-001", "gpt-4o", "openai", from, to, 1000, 10).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "request_id", "api_key_id", "model", "provider",
+			"prompt_tokens", "output_tokens", "total_tokens",
+			"cost_usd", "status_code", "latency_ms", "streaming", "error_message", "created_at",
+		}).AddRow(
+			int64(1234),
+			"req-123",
+			"key-001",
+			"gpt-4o",
+			"openai",
+			100,
+			50,
+			150,
+			0.00225,
+			200,
+			int64(823),
+			false,
+			"",
+			time.Date(2025, time.January, 1, 12, 0, 0, 0, time.UTC),
+		))
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/v1/admin/audit?api_key_id=key-001&model=gpt-4o&provider=openai&status=success&from=2025-01-01T00:00:00Z&to=2025-01-02T00:00:00Z&limit=5000&offset=10",
+		nil,
+	)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var payload struct {
+		Data []struct {
+			ID        int64  `json:"id"`
+			RequestID string `json:"request_id"`
+			LatencyMS int64  `json:"latency_ms"`
+		} `json:"data"`
+		Total  int `json:"total"`
+		Limit  int `json:"limit"`
+		Offset int `json:"offset"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Total != 1 || payload.Limit != 1000 || payload.Offset != 10 {
+		t.Fatalf("pagination = (%d,%d,%d), want (1,1000,10)", payload.Total, payload.Limit, payload.Offset)
+	}
+	if len(payload.Data) != 1 {
+		t.Fatalf("data length = %d, want 1", len(payload.Data))
+	}
+	if payload.Data[0].ID != 1234 || payload.Data[0].RequestID != "req-123" || payload.Data[0].LatencyMS != 823 {
+		t.Fatalf("entry = %+v, want id=1234 request_id=req-123 latency_ms=823", payload.Data[0])
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
 func TestHandleCreateModel_NilDB_ReturnsServiceUnavailable(t *testing.T) {
 	handler := api.HandleCreateModel(nil)
 

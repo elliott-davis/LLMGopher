@@ -1,7 +1,7 @@
 # Spec 06: Audit Log Query API
 
 ## Status
-pending
+completed
 
 ## Goal
 Expose the audit log data that is already persisted in PostgreSQL via a queryable admin endpoint. Operators need this to investigate usage, debug issues, and review request history without direct database access.
@@ -95,17 +95,17 @@ Add `ID int64` field so the response includes the DB row ID for pagination refer
 - Sensitive field redaction (error messages may contain provider error details)
 
 ## Acceptance Criteria
-- [ ] `GET /v1/admin/audit` returns paginated rows from `audit_log`
-- [ ] `api_key_id` filter returns only rows for that key
-- [ ] `from`/`to` filters work correctly with ISO 8601 input
-- [ ] `status=error` returns only rows with `status_code >= 400`
-- [ ] `limit` is capped at 1000
-- [ ] `total` reflects the full count matching the filters, not just the current page
-- [ ] Returns 400 on invalid query parameter values (e.g., non-numeric limit)
-- [ ] Empty result set returns `{"data": [], "total": 0, ...}`
+- [x] `GET /v1/admin/audit` returns paginated rows from `audit_log`
+- [x] `api_key_id` filter returns only rows for that key
+- [x] `from`/`to` filters work correctly with ISO 8601 input
+- [x] `status=error` returns only rows with `status_code >= 400`
+- [x] `limit` is capped at 1000
+- [x] `total` reflects the full count matching the filters, not just the current page
+- [x] Returns 400 on invalid query parameter values (e.g., non-numeric limit)
+- [x] Empty result set returns `{"data": [], "total": 0, ...}`
 
 ## Key Files
 - `pkg/llm/audit.go` — add `ID` field to `AuditEntry`
-- `internal/storage/audit_logger.go` — add `QueryAuditLog` function
+- `internal/storage/audit_query.go` — add `QueryAuditLog` function
 - `internal/api/admin.go` — new handler
 - `internal/api/router.go` — new route

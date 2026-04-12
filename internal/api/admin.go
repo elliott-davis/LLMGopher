@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,6 +71,157 @@ func HandleGetProviders(cache *storage.StateCache) http.HandlerFunc {
 		}
 
 		WriteJSON(w, http.StatusOK, providers)
+	}
+}
+
+type auditEntryResponse struct {
+	ID           int64     `json:"id"`
+	RequestID    string    `json:"request_id"`
+	APIKeyID     string    `json:"api_key_id"`
+	Model        string    `json:"model"`
+	Provider     string    `json:"provider"`
+	PromptTokens int       `json:"prompt_tokens"`
+	OutputTokens int       `json:"output_tokens"`
+	TotalTokens  int       `json:"total_tokens"`
+	CostUSD      float64   `json:"cost_usd"`
+	StatusCode   int       `json:"status_code"`
+	LatencyMS    int64     `json:"latency_ms"`
+	Streaming    bool      `json:"streaming"`
+	ErrorMessage string    `json:"error_message"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type getAuditLogResponse struct {
+	Data   []auditEntryResponse `json:"data"`
+	Total  int                  `json:"total"`
+	Limit  int                  `json:"limit"`
+	Offset int                  `json:"offset"`
+}
+
+const (
+	auditStatusSuccess = "success"
+	auditStatusError   = "error"
+	auditDefaultLimit  = 100
+	auditMaxLimit      = 1000
+)
+
+// HandleGetAuditLog returns paginated audit entries from PostgreSQL.
+func HandleGetAuditLog(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			WriteError(w, http.StatusServiceUnavailable, "database unavailable", "service_unavailable")
+			return
+		}
+
+		query := storage.AuditQuery{
+			APIKeyID: strings.TrimSpace(r.URL.Query().Get("api_key_id")),
+			Model:    strings.TrimSpace(r.URL.Query().Get("model")),
+			Provider: strings.TrimSpace(r.URL.Query().Get("provider")),
+			Limit:    auditDefaultLimit,
+			Offset:   0,
+		}
+
+		statusFilter := strings.TrimSpace(r.URL.Query().Get("status"))
+		if statusFilter != "" && statusFilter != auditStatusSuccess && statusFilter != auditStatusError {
+			WriteError(w, http.StatusBadRequest, "status must be one of: success, error", "invalid_request_error")
+			return
+		}
+		query.Status = statusFilter
+
+		fromRaw := strings.TrimSpace(r.URL.Query().Get("from"))
+		if fromRaw != "" {
+			from, err := time.Parse(time.RFC3339, fromRaw)
+			if err != nil {
+				WriteError(w, http.StatusBadRequest, "from must be an ISO 8601 timestamp", "invalid_request_error")
+				return
+			}
+			query.From = &from
+		}
+
+		toRaw := strings.TrimSpace(r.URL.Query().Get("to"))
+		if toRaw != "" {
+			to, err := time.Parse(time.RFC3339, toRaw)
+			if err != nil {
+				WriteError(w, http.StatusBadRequest, "to must be an ISO 8601 timestamp", "invalid_request_error")
+				return
+			}
+			query.To = &to
+		}
+
+		if query.From != nil && query.To != nil && query.From.After(*query.To) {
+			WriteError(w, http.StatusBadRequest, "from must be before or equal to to", "invalid_request_error")
+			return
+		}
+
+		limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
+		if limitRaw != "" {
+			limit, err := strconv.Atoi(limitRaw)
+			if err != nil {
+				WriteError(w, http.StatusBadRequest, "limit must be a positive integer", "invalid_request_error")
+				return
+			}
+			if limit <= 0 {
+				WriteError(w, http.StatusBadRequest, "limit must be a positive integer", "invalid_request_error")
+				return
+			}
+			if limit > auditMaxLimit {
+				limit = auditMaxLimit
+			}
+			query.Limit = limit
+		}
+
+		offsetRaw := strings.TrimSpace(r.URL.Query().Get("offset"))
+		if offsetRaw != "" {
+			offset, err := strconv.Atoi(offsetRaw)
+			if err != nil {
+				WriteError(w, http.StatusBadRequest, "offset must be a non-negative integer", "invalid_request_error")
+				return
+			}
+			if offset < 0 {
+				WriteError(w, http.StatusBadRequest, "offset must be a non-negative integer", "invalid_request_error")
+				return
+			}
+			query.Offset = offset
+		}
+
+		result, err := storage.QueryAuditLog(r.Context(), db, query)
+		if err != nil {
+			status := http.StatusInternalServerError
+			msg := "failed to query audit log"
+			if errors.Is(err, sql.ErrConnDone) {
+				status = http.StatusServiceUnavailable
+				msg = "database unavailable"
+			}
+			WriteError(w, status, msg, "invalid_request_error")
+			return
+		}
+
+		data := make([]auditEntryResponse, 0, len(result.Data))
+		for _, entry := range result.Data {
+			data = append(data, auditEntryResponse{
+				ID:           entry.ID,
+				RequestID:    entry.RequestID,
+				APIKeyID:     entry.APIKeyID,
+				Model:        entry.Model,
+				Provider:     entry.Provider,
+				PromptTokens: entry.PromptTokens,
+				OutputTokens: entry.OutputTokens,
+				TotalTokens:  entry.TotalTokens,
+				CostUSD:      entry.CostUSD,
+				StatusCode:   entry.StatusCode,
+				LatencyMS:    entry.Latency.Milliseconds(),
+				Streaming:    entry.Streaming,
+				ErrorMessage: entry.ErrorMessage,
+				CreatedAt:    entry.CreatedAt,
+			})
+		}
+
+		WriteJSON(w, http.StatusOK, getAuditLogResponse{
+			Data:   data,
+			Total:  result.Total,
+			Limit:  query.Limit,
+			Offset: query.Offset,
+		})
 	}
 }
 
