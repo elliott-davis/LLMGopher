@@ -136,6 +136,10 @@ func inferProviderRegistryName(providerCfg *llm.ProviderConfig) string {
 		strings.Contains(baseURL, "aiplatform.googleapis.com"),
 		authType == "vertex_service_account":
 		return "vertex"
+	case strings.Contains(name, "bedrock"),
+		strings.Contains(baseURL, "bedrock-runtime."),
+		authType == "aws_bedrock":
+		return "bedrock"
 	case strings.Contains(name, "openai"),
 		strings.Contains(baseURL, "api.openai.com"):
 		return "openai"

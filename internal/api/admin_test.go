@@ -541,6 +541,48 @@ func TestHandleCreateProvider_NilDB_ReturnsServiceUnavailable(t *testing.T) {
 	}
 }
 
+func TestHandleCreateProvider_BedrockMissingCredentialToken_ReturnsBadRequest(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleCreateProvider(db, bytes.Repeat([]byte("k"), 32))
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/admin/providers",
+		bytes.NewBufferString(`{"name":"Bedrock","base_url":"us-east-1","auth_type":"aws_bedrock"}`),
+	)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleCreateProvider_BedrockInvalidCredentialToken_ReturnsBadRequest(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleCreateProvider(db, bytes.Repeat([]byte("k"), 32))
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/admin/providers",
+		bytes.NewBufferString(`{"name":"Bedrock","base_url":"us-east-1","auth_type":"aws_bedrock","credential_token":"not-json"}`),
+	)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
 func TestHandleCreateAPIKey_NilDB_ReturnsServiceUnavailable(t *testing.T) {
 	handler := api.HandleCreateAPIKey(nil)
 

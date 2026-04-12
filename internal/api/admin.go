@@ -648,8 +648,19 @@ func HandleCreateProviderWithValidation(db *sql.DB, providerCredentialKey []byte
 			WriteError(w, http.StatusBadRequest, "credential_token is required for auth_type bearer/openai_compat", "invalid_request_error")
 			return
 		}
+		requiresBedrockToken := authType == "aws_bedrock"
+		if requiresBedrockToken && strings.TrimSpace(payload.CredentialToken) == "" {
+			WriteError(w, http.StatusBadRequest, "credential_token is required for auth_type aws_bedrock", "invalid_request_error")
+			return
+		}
 
 		credentialToken := strings.TrimSpace(payload.CredentialToken)
+		if requiresBedrockToken {
+			if err := validateBedrockCredentialToken(credentialToken); err != nil {
+				WriteError(w, http.StatusBadRequest, err.Error(), "invalid_request_error")
+				return
+			}
+		}
 		if validator != nil && requiresBearerToken && credentialToken != "" {
 			if authType == "openai_compat" {
 				if err := validator.ValidateWithBaseURL(r.Context(), "openai_compat", credentialToken, payload.BaseURL); err != nil {
@@ -795,6 +806,12 @@ func HandleUpdateProviderWithValidation(db *sql.DB, providerCredentialKey []byte
 		}
 
 		credentialToken := strings.TrimSpace(payload.CredentialToken)
+		if authType == "aws_bedrock" && credentialToken != "" {
+			if err := validateBedrockCredentialToken(credentialToken); err != nil {
+				WriteError(w, http.StatusBadRequest, err.Error(), "invalid_request_error")
+				return
+			}
+		}
 		if validator != nil &&
 			credentialToken != "" {
 			if authType == "openai_compat" {
@@ -1466,6 +1483,22 @@ func textArrayLiteral(values []string) *string {
 	}
 	literal := "{" + strings.Join(escaped, ",") + "}"
 	return &literal
+}
+
+func validateBedrockCredentialToken(raw string) error {
+	var payload struct {
+		AccessKeyID     string `json:"access_key_id"`
+		SecretAccessKey string `json:"secret_access_key"`
+		SessionToken    string `json:"session_token,omitempty"`
+	}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return fmt.Errorf("credential_token for auth_type aws_bedrock must be JSON with access_key_id and secret_access_key")
+	}
+
+	if strings.TrimSpace(payload.AccessKeyID) == "" || strings.TrimSpace(payload.SecretAccessKey) == "" {
+		return fmt.Errorf("credential_token for auth_type aws_bedrock must include access_key_id and secret_access_key")
+	}
+	return nil
 }
 
 func encryptProviderCredential(key, plaintext []byte) (ciphertext []byte, nonce []byte, err error) {

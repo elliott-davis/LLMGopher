@@ -1,7 +1,7 @@
 # Spec 12: AWS Bedrock Provider
 
 ## Status
-pending
+completed
 
 ## Goal
 Add an AWS Bedrock provider that exposes models hosted on Amazon Bedrock (Claude via Bedrock, Llama, Titan, Mistral, Command R, etc.) through the gateway's OpenAI-compatible API. Bedrock is a critical provider for customers using AWS infrastructure.
@@ -113,13 +113,25 @@ For DB-configured providers, store `access_key_id` and `secret_access_key` as en
 - Bedrock Knowledge Bases (RAG)
 
 ## Acceptance Criteria
-- [ ] A configured Bedrock provider successfully routes a chat completion to Claude via Bedrock
-- [ ] Token counts and cost are recorded (Bedrock Converse API returns usage)
-- [ ] Streaming works via `ConverseStream`
-- [ ] Default AWS credential chain works (no explicit key required in config)
-- [ ] Model alias mapping resolves `claude-3-5-sonnet` to the correct Bedrock model ID
-- [ ] Tool calls translate correctly for Claude via Bedrock
-- [ ] Unit tests mock the Bedrock client interface
+- [x] A configured Bedrock provider successfully routes a chat completion to Claude via Bedrock
+- [x] Token counts and cost are recorded (Bedrock Converse API returns usage)
+- [x] Streaming works via `ConverseStream`
+- [x] Default AWS credential chain works (no explicit key required in config)
+- [x] Model alias mapping resolves `claude-3-5-sonnet` to the correct Bedrock model ID
+- [x] Tool calls translate correctly for Claude via Bedrock
+- [x] Unit tests mock the Bedrock client interface
+
+## Implementation Notes
+- Added `internal/proxy/provider_bedrock.go` with Bedrock Converse and ConverseStream translation:
+  - OpenAI request -> Bedrock messages/system/inference config/tool config translation
+  - Bedrock response -> OpenAI choice/finish_reason/usage translation
+  - Bedrock stream events -> OpenAI-compatible SSE chunks with tool-call deltas and `[DONE]`
+- Added Bedrock model alias mapping with passthrough support for direct Bedrock model IDs.
+- Added static Bedrock provider config wiring in `pkg/config/config.go` and registration in `cmd/gateway/main.go` when a region is configured.
+- Extended dynamic provider sync to support DB providers with `auth_type = "aws_bedrock"` and encrypted JSON credentials (`access_key_id`, `secret_access_key`, optional `session_token`).
+- Extended admin provider validation so Bedrock provider credentials are required and validated as JSON on create (and validated on update when provided).
+- Extended provider credential loading query to include `aws_bedrock`.
+- Added/updated tests for Bedrock provider translation and streaming, dynamic registration, model provider inference, credential loading query, and admin validation.
 
 ## Key Files
 - `internal/proxy/provider_bedrock.go` — new file

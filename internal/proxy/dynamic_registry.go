@@ -3,6 +3,8 @@ package proxy
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -98,40 +100,78 @@ func RegisterDynamicOpenAICompatProviders(
 		}
 
 		authType := strings.ToLower(strings.TrimSpace(providerCfg.AuthType))
-		if !supportsOpenAICompatAuthType(authType) {
-			continue
-		}
-
-		baseURL := ResolveProviderBaseURL(providerCfg.Name, providerCfg.BaseURL)
-		if baseURL == "" {
-			logger.Warn("skipping dynamic provider registration without base URL",
-				"provider_id", providerID.String(),
-				"provider_name", providerCfg.Name,
-			)
-			continue
-		}
-
-		apiKey := ""
-		if authType != "none" {
-			var ok bool
-			apiKey, ok = credentialTokens[providerID]
-			if !ok || strings.TrimSpace(apiKey) == "" {
-				logger.Warn("skipping dynamic provider registration without credentials",
+		switch {
+		case supportsOpenAICompatAuthType(authType):
+			baseURL := ResolveProviderBaseURL(providerCfg.Name, providerCfg.BaseURL)
+			if baseURL == "" {
+				logger.Warn("skipping dynamic provider registration without base URL",
 					"provider_id", providerID.String(),
 					"provider_name", providerCfg.Name,
-					"auth_type", authType,
 				)
 				continue
 			}
-		}
 
-		registry.Register(NewOpenAICompatProvider(providerCfg.Name, baseURL, apiKey))
-		logger.Debug("registered dynamic OpenAI-compatible provider",
-			"provider_id", providerID.String(),
-			"provider_name", providerCfg.Name,
-			"auth_type", authType,
-			"base_url", baseURL,
-		)
+			apiKey := ""
+			if authType != "none" {
+				var ok bool
+				apiKey, ok = credentialTokens[providerID]
+				if !ok || strings.TrimSpace(apiKey) == "" {
+					logger.Warn("skipping dynamic provider registration without credentials",
+						"provider_id", providerID.String(),
+						"provider_name", providerCfg.Name,
+						"auth_type", authType,
+					)
+					continue
+				}
+			}
+
+			registry.Register(NewOpenAICompatProvider(providerCfg.Name, baseURL, apiKey))
+			logger.Debug("registered dynamic OpenAI-compatible provider",
+				"provider_id", providerID.String(),
+				"provider_name", providerCfg.Name,
+				"auth_type", authType,
+				"base_url", baseURL,
+			)
+
+		case authType == "aws_bedrock":
+			region := resolveBedrockRegion(providerCfg.BaseURL)
+			if region == "" {
+				logger.Warn("skipping bedrock provider registration without region",
+					"provider_id", providerID.String(),
+					"provider_name", providerCfg.Name,
+				)
+				continue
+			}
+
+			creds, err := parseBedrockCredentialPayload(credentialTokens[providerID])
+			if err != nil {
+				logger.Warn("skipping bedrock provider registration with invalid credentials",
+					"provider_id", providerID.String(),
+					"provider_name", providerCfg.Name,
+					"error", err,
+				)
+				continue
+			}
+
+			provider, err := NewBedrockProvider(region, creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken)
+			if err != nil {
+				logger.Warn("skipping bedrock provider registration",
+					"provider_id", providerID.String(),
+					"provider_name", providerCfg.Name,
+					"region", region,
+					"error", err,
+				)
+				continue
+			}
+
+			registry.Register(provider)
+			logger.Debug("registered dynamic Bedrock provider",
+				"provider_id", providerID.String(),
+				"provider_name", providerCfg.Name,
+				"auth_type", authType,
+				"region", region,
+			)
+		}
 	}
 }
 
@@ -142,4 +182,32 @@ func supportsOpenAICompatAuthType(authType string) bool {
 	default:
 		return false
 	}
+}
+
+type bedrockCredentialPayload struct {
+	AccessKeyID     string `json:"access_key_id"`
+	SecretAccessKey string `json:"secret_access_key"`
+	SessionToken    string `json:"session_token,omitempty"`
+}
+
+func parseBedrockCredentialPayload(raw string) (bedrockCredentialPayload, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return bedrockCredentialPayload{}, nil
+	}
+
+	var payload bedrockCredentialPayload
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+		return bedrockCredentialPayload{}, fmt.Errorf("credential_token must be JSON")
+	}
+
+	payload.AccessKeyID = strings.TrimSpace(payload.AccessKeyID)
+	payload.SecretAccessKey = strings.TrimSpace(payload.SecretAccessKey)
+	payload.SessionToken = strings.TrimSpace(payload.SessionToken)
+
+	if (payload.AccessKeyID == "") != (payload.SecretAccessKey == "") {
+		return bedrockCredentialPayload{}, fmt.Errorf("access_key_id and secret_access_key must both be provided")
+	}
+
+	return payload, nil
 }

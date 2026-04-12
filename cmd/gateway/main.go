@@ -163,6 +163,34 @@ func run(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	if cfg.Providers.Bedrock.Region != "" {
+		bedrockProvider, err := proxy.NewBedrockProvider(
+			cfg.Providers.Bedrock.Region,
+			cfg.Providers.Bedrock.AccessKeyID,
+			cfg.Providers.Bedrock.SecretAccessKey,
+			"",
+		)
+		if err != nil {
+			logger.Warn("Bedrock not registered: failed to initialize provider",
+				"error", err,
+				"region", cfg.Providers.Bedrock.Region,
+			)
+		} else {
+			registry.Register(
+				bedrockProvider,
+				"bedrock/*",
+				"claude-3-5-sonnet",
+				"claude-3-5-haiku",
+				"claude-3-opus",
+				"llama-3-70b",
+				"mistral-large",
+				"command-r-plus",
+				"titan-text-express",
+			)
+			logger.Info("registered Bedrock provider", "region", cfg.Providers.Bedrock.Region)
+		}
+	}
+
 	proxy.StartDynamicProviderSync(ctx, registry, stateCache, db, providerCredentialKey, logger)
 
 	deps := &api.Dependencies{

@@ -246,7 +246,7 @@ func TestLoadProviderCredentialTokens(t *testing.T) {
 
 	rows := sqlmock.NewRows([]string{"id", "credential_ciphertext", "credential_nonce"}).
 		AddRow(providerID.String(), ciphertext, nonce)
-	mock.ExpectQuery("SELECT id, credential_ciphertext, credential_nonce\\s+FROM providers\\s+WHERE has_credentials = TRUE\\s+AND lower\\(auth_type\\) IN \\('bearer', 'openai_compat'\\)").
+	mock.ExpectQuery("SELECT id, credential_ciphertext, credential_nonce\\s+FROM providers\\s+WHERE has_credentials = TRUE\\s+AND lower\\(auth_type\\) IN \\('bearer', 'openai_compat', 'aws_bedrock'\\)").
 		WillReturnRows(rows)
 
 	got, err := LoadProviderCredentialTokens(context.Background(), db, key)

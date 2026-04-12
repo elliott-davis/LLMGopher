@@ -223,8 +223,8 @@ func (v *CredentialValidator) perform(req *http.Request) error {
 	}
 }
 
-// LoadProviderCredentialTokens returns decrypted bearer-like provider credentials
-// for providers configured with auth_type bearer or openai_compat.
+// LoadProviderCredentialTokens returns decrypted provider credential payloads
+// for providers configured with bearer-like auth or aws_bedrock auth.
 func LoadProviderCredentialTokens(ctx context.Context, db *sql.DB, encryptionKey []byte) (map[uuid.UUID]string, error) {
 	result := make(map[uuid.UUID]string)
 	if db == nil {
@@ -235,7 +235,7 @@ func LoadProviderCredentialTokens(ctx context.Context, db *sql.DB, encryptionKey
 		SELECT id, credential_ciphertext, credential_nonce
 		FROM providers
 		WHERE has_credentials = TRUE
-		  AND lower(auth_type) IN ('bearer', 'openai_compat')
+		  AND lower(auth_type) IN ('bearer', 'openai_compat', 'aws_bedrock')
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("query provider credentials: %w", err)

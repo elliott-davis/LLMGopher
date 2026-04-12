@@ -99,3 +99,34 @@ func TestRegisterDynamicOpenAICompatProviders_RefreshAddsProvider(t *testing.T) 
 		t.Fatalf("ResolveProvider(together) error = %v, want nil after refresh", err)
 	}
 }
+
+func TestRegisterDynamicOpenAICompatProviders_RegistersBedrockProvider(t *testing.T) {
+	t.Parallel()
+
+	registry := llm.NewRegistry()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	bedrockID := uuid.New()
+	state := &storage.GatewayState{
+		Providers: map[uuid.UUID]*llm.ProviderConfig{
+			bedrockID: {
+				ID:       bedrockID.String(),
+				Name:     "AWS Bedrock",
+				BaseURL:  "us-east-1",
+				AuthType: "aws_bedrock",
+			},
+		},
+	}
+
+	RegisterDynamicOpenAICompatProviders(registry, state, map[uuid.UUID]string{
+		bedrockID: `{"access_key_id":"AKIAX","secret_access_key":"secret"}`,
+	}, logger)
+
+	provider, err := registry.ResolveProvider("bedrock")
+	if err != nil {
+		t.Fatalf("ResolveProvider(bedrock) error = %v, want nil", err)
+	}
+	if provider.Name() != "bedrock" {
+		t.Fatalf("provider name = %q, want %q", provider.Name(), "bedrock")
+	}
+}

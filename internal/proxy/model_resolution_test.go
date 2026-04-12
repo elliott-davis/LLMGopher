@@ -106,6 +106,18 @@ func TestPreferredProviderRegistryName_PassthroughCustomProviderName(t *testing.
 	}
 }
 
+func TestPreferredProviderRegistryName_InfersBedrock(t *testing.T) {
+	got := preferredProviderRegistryName(&llm.ProviderConfig{
+		Name:     "AWS Bedrock",
+		BaseURL:  "https://bedrock-runtime.us-east-1.amazonaws.com",
+		AuthType: "aws_bedrock",
+	}, "claude-3-5-sonnet")
+
+	if got != "bedrock" {
+		t.Fatalf("preferredProviderRegistryName() = %q, want %q", got, "bedrock")
+	}
+}
+
 func testGatewayState(providerName, alias, name string) *storage.GatewayState {
 	return testGatewayStateWithProvider(&llm.ProviderConfig{
 		ID:   uuid.NewString(),

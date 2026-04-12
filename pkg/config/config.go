@@ -29,6 +29,7 @@ type ProvidersConfig struct {
 	OpenAI    ProviderEndpoint
 	Anthropic ProviderEndpoint
 	Vertex    VertexConfig
+	Bedrock   BedrockConfig
 }
 
 type ProviderEndpoint struct {
@@ -39,6 +40,12 @@ type ProviderEndpoint struct {
 type VertexConfig struct {
 	ProjectID string
 	Region    string
+}
+
+type BedrockConfig struct {
+	Region          string `mapstructure:"region"`
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	SecretAccessKey string `mapstructure:"secret_access_key"`
 }
 
 type ServerConfig struct {
@@ -111,6 +118,9 @@ func BindFlags(fs *pflag.FlagSet) {
 	fs.String("anthropic-base-url", "https://api.anthropic.com", "Anthropic base URL")
 	fs.String("vertex-project-id", "", "Google Cloud project ID for Vertex AI OpenAI-compatible endpoint")
 	fs.String("vertex-region", "us-central1", "Google Cloud region for Vertex AI OpenAI-compatible endpoint")
+	fs.String("bedrock-region", "", "AWS region for Bedrock runtime requests")
+	fs.String("bedrock-access-key-id", "", "AWS access key ID for Bedrock (optional; default credential chain is used when unset)")
+	fs.String("bedrock-secret-access-key", "", "AWS secret access key for Bedrock (required when access key ID is set)")
 
 	fs.Bool("pricing-sync-enabled", true, "Enable periodic pricing sync from upstream")
 	fs.Duration("pricing-sync-interval", 6*time.Hour, "How often to sync pricing from upstream")
@@ -200,6 +210,11 @@ func Load(fs *pflag.FlagSet) (*Config, error) {
 				ProjectID: v.GetString("vertex-project-id"),
 				Region:    v.GetString("vertex-region"),
 			},
+			Bedrock: BedrockConfig{
+				Region:          v.GetString("bedrock-region"),
+				AccessKeyID:     v.GetString("bedrock-access-key-id"),
+				SecretAccessKey: v.GetString("bedrock-secret-access-key"),
+			},
 		},
 		Security: SecurityConfig{
 			ProviderCredentialsKey: v.GetString("provider-credentials-key"),
@@ -236,6 +251,9 @@ func bindUnprefixedEnv(v *viper.Viper) {
 		"anthropic-base-url":         "ANTHROPIC_BASE_URL",
 		"vertex-project-id":          "VERTEX_PROJECT_ID",
 		"vertex-region":              "VERTEX_REGION",
+		"bedrock-region":             "BEDROCK_REGION",
+		"bedrock-access-key-id":      "BEDROCK_ACCESS_KEY_ID",
+		"bedrock-secret-access-key":  "BEDROCK_SECRET_ACCESS_KEY",
 		"server-read-timeout":        "SERVER_READ_TIMEOUT",
 		"server-write-timeout":       "SERVER_WRITE_TIMEOUT",
 		"server-idle-timeout":        "SERVER_IDLE_TIMEOUT",
