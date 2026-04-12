@@ -163,6 +163,8 @@ func run(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	proxy.StartDynamicProviderSync(ctx, registry, stateCache, db, providerCredentialKey, logger)
+
 	deps := &api.Dependencies{
 		Registry:               registry,
 		RateLimiter:            rateLimiter,

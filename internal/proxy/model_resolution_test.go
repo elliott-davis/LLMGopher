@@ -94,6 +94,18 @@ func TestPreferredProviderRegistryName_UsesRequestedPrefix(t *testing.T) {
 	}
 }
 
+func TestPreferredProviderRegistryName_PassthroughCustomProviderName(t *testing.T) {
+	got := preferredProviderRegistryName(&llm.ProviderConfig{
+		Name:     "Groq",
+		BaseURL:  "https://api.groq.com/openai/v1",
+		AuthType: "openai_compat",
+	}, "llama3")
+
+	if got != "Groq" {
+		t.Fatalf("preferredProviderRegistryName() = %q, want %q", got, "Groq")
+	}
+}
+
 func testGatewayState(providerName, alias, name string) *storage.GatewayState {
 	return testGatewayStateWithProvider(&llm.ProviderConfig{
 		ID:   uuid.NewString(),

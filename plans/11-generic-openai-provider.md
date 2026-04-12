@@ -1,7 +1,7 @@
 # Spec 11: Generic OpenAI-Compatible Provider
 
 ## Status
-pending
+completed
 
 ## Goal
 Implement a provider that forwards requests to any OpenAI-compatible endpoint by configuring only a `base_url` and API key. This single implementation covers Groq, Mistral AI, Ollama, vLLM, LM Studio, Together AI, Fireworks AI, DeepSeek, Perplexity, and any other server implementing the OpenAI chat completions API.
@@ -75,12 +75,22 @@ Add an `"openai_compat"` case to the validator that tests the configured base UR
 - Tool/function call translation (generic compat servers use the same format as OpenAI)
 
 ## Acceptance Criteria
-- [ ] A provider with `base_url: "https://api.groq.com/openai/v1"` and a Groq API key successfully completes a chat request
-- [ ] An Ollama provider with no API key (`auth_type: "none"`) works with a locally running Ollama server
-- [ ] Provider registered via DB (not static config) is picked up at startup and after state cache refresh
-- [ ] Well-known base URL defaulting works for `groq`, `mistral`, `together`
-- [ ] Model routing routes to the correct generic provider by provider name
-- [ ] Unit test covers the provider with a mock HTTP server
+- [x] A provider with `base_url: "https://api.groq.com/openai/v1"` and a Groq API key successfully completes a chat request
+- [x] An Ollama provider with no API key (`auth_type: "none"`) works with a locally running Ollama server
+- [x] Provider registered via DB (not static config) is picked up at startup and after state cache refresh
+- [x] Well-known base URL defaulting works for `groq`, `mistral`, `together`
+- [x] Model routing routes to the correct generic provider by provider name
+- [x] Unit test covers the provider with a mock HTTP server
+
+## Implementation Notes
+- Added `OpenAICompatProvider` with optional bearer auth and OpenAI-compatible `POST {base_url}/chat/completions` forwarding.
+- Added well-known base URL defaults in `internal/proxy/provider_defaults.go`.
+- Added dynamic DB-backed provider registration loop in gateway startup that:
+  - loads/decrypts bearer-compatible provider credentials
+  - registers `bearer`, `openai_compat`, and `none` auth-type providers as OpenAI-compatible providers
+  - reapplies registration on interval so state-cache refreshes are reflected
+- Extended credential validation with `openai_compat` support and localhost short-circuit for local compat servers.
+- Added unit tests for provider forwarding/defaults, dynamic provider registration behavior, and validation/credential decryption paths.
 
 ## Key Files
 - `internal/proxy/provider_openai_compat.go` — new file

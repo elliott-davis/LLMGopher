@@ -2,12 +2,19 @@ package validation
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/google/uuid"
 )
 
 func TestCredentialValidatorValidateOpenAI(t *testing.T) {
@@ -184,4 +191,100 @@ func TestCredentialValidatorNetworkError(t *testing.T) {
 	if !strings.EqualFold(vErr.Message, "Network Error") {
 		t.Fatalf("error message = %q, want %q", vErr.Message, "Network Error")
 	}
+}
+
+func TestCredentialValidatorValidateOpenAICompat(t *testing.T) {
+	t.Parallel()
+
+	var (
+		gotPath string
+		gotAuth string
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer srv.Close()
+
+	validator := NewCredentialValidator(&http.Client{Timeout: 2 * time.Second})
+	if err := validator.validateOpenAICompat(context.Background(), "compat-key", srv.URL+"/v1"); err != nil {
+		t.Fatalf("validateOpenAICompat() error = %v, want nil", err)
+	}
+	if gotPath != "/v1/models" {
+		t.Fatalf("path = %q, want %q", gotPath, "/v1/models")
+	}
+	if gotAuth != "Bearer compat-key" {
+		t.Fatalf("Authorization header = %q, want %q", gotAuth, "Bearer compat-key")
+	}
+}
+
+func TestCredentialValidatorValidateOpenAICompatSkipsLocalhost(t *testing.T) {
+	t.Parallel()
+
+	validator := NewCredentialValidator(&http.Client{Timeout: 2 * time.Second})
+	if err := validator.ValidateWithBaseURL(context.Background(), "openai_compat", "", "http://localhost:11434/v1"); err != nil {
+		t.Fatalf("ValidateWithBaseURL() error = %v, want nil for localhost", err)
+	}
+}
+
+func TestLoadProviderCredentialTokens(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New() error = %v", err)
+	}
+	defer func(db *sql.DB) {
+		_ = db.Close()
+	}(db)
+
+	providerID := uuid.New()
+	key := mustGenerateCredentialKey(t)
+	ciphertext, nonce := mustEncryptCredentialForTest(t, key, []byte("sk-test"))
+
+	rows := sqlmock.NewRows([]string{"id", "credential_ciphertext", "credential_nonce"}).
+		AddRow(providerID.String(), ciphertext, nonce)
+	mock.ExpectQuery("SELECT id, credential_ciphertext, credential_nonce\\s+FROM providers\\s+WHERE has_credentials = TRUE\\s+AND lower\\(auth_type\\) IN \\('bearer', 'openai_compat'\\)").
+		WillReturnRows(rows)
+
+	got, err := LoadProviderCredentialTokens(context.Background(), db, key)
+	if err != nil {
+		t.Fatalf("LoadProviderCredentialTokens() error = %v, want nil", err)
+	}
+	if got[providerID] != "sk-test" {
+		t.Fatalf("credential token = %q, want %q", got[providerID], "sk-test")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations not met: %v", err)
+	}
+}
+
+func mustGenerateCredentialKey(t *testing.T) []byte {
+	t.Helper()
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatalf("rand.Read(key) error = %v", err)
+	}
+	return key
+}
+
+func mustEncryptCredentialForTest(t *testing.T, key []byte, plaintext []byte) (ciphertext []byte, nonce []byte) {
+	t.Helper()
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		t.Fatalf("aes.NewCipher() error = %v", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatalf("cipher.NewGCM() error = %v", err)
+	}
+
+	nonce = make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		t.Fatalf("rand.Read(nonce) error = %v", err)
+	}
+	ciphertext = gcm.Seal(nil, nonce, plaintext, nil)
+	return ciphertext, nonce
 }

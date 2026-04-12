@@ -630,27 +630,33 @@ func HandleCreateProviderWithValidation(db *sql.DB, providerCredentialKey []byte
 			}
 		}
 
+		authType := strings.ToLower(strings.TrimSpace(payload.AuthType))
 		if strings.TrimSpace(payload.Name) == "" ||
 			strings.TrimSpace(payload.BaseURL) == "" ||
-			strings.TrimSpace(payload.AuthType) == "" {
+			authType == "" {
 			WriteError(w, http.StatusBadRequest, "name, base_url, and auth_type are required", "invalid_request_error")
 			return
 		}
 
-		requiresCredentialFile := strings.EqualFold(strings.TrimSpace(payload.AuthType), "vertex_service_account")
+		requiresCredentialFile := authType == "vertex_service_account"
 		if requiresCredentialFile && len(credentialBytes) == 0 {
 			WriteError(w, http.StatusBadRequest, "credential_file is required for auth_type vertex_service_account", "invalid_request_error")
 			return
 		}
-		requiresBearerToken := strings.EqualFold(strings.TrimSpace(payload.AuthType), "bearer")
+		requiresBearerToken := authType == "bearer" || authType == "openai_compat"
 		if requiresBearerToken && strings.TrimSpace(payload.CredentialToken) == "" {
-			WriteError(w, http.StatusBadRequest, "credential_token is required for auth_type bearer", "invalid_request_error")
+			WriteError(w, http.StatusBadRequest, "credential_token is required for auth_type bearer/openai_compat", "invalid_request_error")
 			return
 		}
 
 		credentialToken := strings.TrimSpace(payload.CredentialToken)
 		if validator != nil && requiresBearerToken && credentialToken != "" {
-			if providerName := inferProviderForCredentialValidation(payload.BaseURL); providerName != "" {
+			if authType == "openai_compat" {
+				if err := validator.ValidateWithBaseURL(r.Context(), "openai_compat", credentialToken, payload.BaseURL); err != nil {
+					writeCredentialValidationFailure(w, err)
+					return
+				}
+			} else if providerName := inferProviderForCredentialValidation(payload.BaseURL); providerName != "" {
 				if err := validator.Validate(r.Context(), providerName, credentialToken); err != nil {
 					writeCredentialValidationFailure(w, err)
 					return
@@ -780,21 +786,28 @@ func HandleUpdateProviderWithValidation(db *sql.DB, providerCredentialKey []byte
 			}
 		}
 
+		authType := strings.ToLower(strings.TrimSpace(payload.AuthType))
 		if strings.TrimSpace(payload.Name) == "" ||
 			strings.TrimSpace(payload.BaseURL) == "" ||
-			strings.TrimSpace(payload.AuthType) == "" {
+			authType == "" {
 			WriteError(w, http.StatusBadRequest, "name, base_url, and auth_type are required", "invalid_request_error")
 			return
 		}
 
 		credentialToken := strings.TrimSpace(payload.CredentialToken)
 		if validator != nil &&
-			strings.EqualFold(strings.TrimSpace(payload.AuthType), "bearer") &&
 			credentialToken != "" {
-			if providerName := inferProviderForCredentialValidation(payload.BaseURL); providerName != "" {
-				if err := validator.Validate(r.Context(), providerName, credentialToken); err != nil {
+			if authType == "openai_compat" {
+				if err := validator.ValidateWithBaseURL(r.Context(), "openai_compat", credentialToken, payload.BaseURL); err != nil {
 					writeCredentialValidationFailure(w, err)
 					return
+				}
+			} else if authType == "bearer" {
+				if providerName := inferProviderForCredentialValidation(payload.BaseURL); providerName != "" {
+					if err := validator.Validate(r.Context(), providerName, credentialToken); err != nil {
+						writeCredentialValidationFailure(w, err)
+						return
+					}
 				}
 			}
 		}

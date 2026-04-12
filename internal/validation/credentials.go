@@ -3,14 +3,20 @@ package validation
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -81,6 +87,21 @@ func (v *CredentialValidator) SetGoogleBaseURLForTest(baseURL string) {
 }
 
 func (v *CredentialValidator) Validate(ctx context.Context, provider string, apiKey string) error {
+	return v.ValidateWithBaseURL(ctx, provider, apiKey, "")
+}
+
+// ValidateWithBaseURL validates provider credentials and supports provider types
+// that require requesting a custom base URL (for example openai_compat).
+func (v *CredentialValidator) ValidateWithBaseURL(ctx context.Context, provider string, apiKey string, baseURL string) error {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	apiKey = strings.TrimSpace(apiKey)
+	baseURL = strings.TrimSpace(baseURL)
+
+	if provider == "openai_compat" && isLocalhostBaseURL(baseURL) {
+		// Local OpenAI-compatible servers often do not require credentials.
+		return nil
+	}
+
 	if strings.TrimSpace(apiKey) == "" {
 		return &ValidationError{
 			Code:    ErrCodeInvalidCredential,
@@ -88,9 +109,11 @@ func (v *CredentialValidator) Validate(ctx context.Context, provider string, api
 		}
 	}
 
-	switch strings.ToLower(strings.TrimSpace(provider)) {
+	switch provider {
 	case "openai":
 		return v.validateOpenAI(ctx, apiKey)
+	case "openai_compat":
+		return v.validateOpenAICompat(ctx, apiKey, baseURL)
 	case "anthropic":
 		return v.validateAnthropic(ctx, apiKey)
 	case "google":
@@ -98,7 +121,7 @@ func (v *CredentialValidator) Validate(ctx context.Context, provider string, api
 	default:
 		return &ValidationError{
 			Code:    ErrCodeUnsupported,
-			Message: "provider must be one of: openai, anthropic, google",
+			Message: "provider must be one of: openai, openai_compat, anthropic, google",
 		}
 	}
 }
@@ -107,6 +130,20 @@ func (v *CredentialValidator) validateOpenAI(ctx context.Context, apiKey string)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(v.openAIBaseURL, "/")+"/v1/models", nil)
 	if err != nil {
 		return &ValidationError{Code: ErrCodeProviderError, Message: "failed to build OpenAI validation request"}
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	return v.perform(req)
+}
+
+func (v *CredentialValidator) validateOpenAICompat(ctx context.Context, apiKey string, baseURL string) error {
+	targetBaseURL := strings.TrimSpace(baseURL)
+	if targetBaseURL == "" {
+		targetBaseURL = strings.TrimRight(v.openAIBaseURL, "/") + "/v1"
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(targetBaseURL, "/")+"/models", nil)
+	if err != nil {
+		return &ValidationError{Code: ErrCodeProviderError, Message: "failed to build OpenAI-compatible validation request"}
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	return v.perform(req)
@@ -184,6 +221,96 @@ func (v *CredentialValidator) perform(req *http.Request) error {
 			Message: fmt.Sprintf("Validation failed with provider status %d", resp.StatusCode),
 		}
 	}
+}
+
+// LoadProviderCredentialTokens returns decrypted bearer-like provider credentials
+// for providers configured with auth_type bearer or openai_compat.
+func LoadProviderCredentialTokens(ctx context.Context, db *sql.DB, encryptionKey []byte) (map[uuid.UUID]string, error) {
+	result := make(map[uuid.UUID]string)
+	if db == nil {
+		return result, nil
+	}
+
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, credential_ciphertext, credential_nonce
+		FROM providers
+		WHERE has_credentials = TRUE
+		  AND lower(auth_type) IN ('bearer', 'openai_compat')
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query provider credentials: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			rawID      string
+			ciphertext []byte
+			nonce      []byte
+		)
+		if err := rows.Scan(&rawID, &ciphertext, &nonce); err != nil {
+			return nil, fmt.Errorf("scan provider credential: %w", err)
+		}
+
+		providerID, err := uuid.Parse(rawID)
+		if err != nil {
+			return nil, fmt.Errorf("parse provider id %q: %w", rawID, err)
+		}
+		if len(ciphertext) == 0 || len(nonce) == 0 {
+			continue
+		}
+		if len(encryptionKey) != 32 {
+			return nil, fmt.Errorf("provider credential key must be configured (32 bytes) to decrypt provider %q", rawID)
+		}
+
+		token, err := decryptProviderCredential(encryptionKey, ciphertext, nonce)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt provider credential for %q: %w", rawID, err)
+		}
+		result[providerID] = strings.TrimSpace(token)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate provider credentials: %w", err)
+	}
+	return result, nil
+}
+
+func decryptProviderCredential(key []byte, ciphertext []byte, nonce []byte) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	if len(nonce) != gcm.NonceSize() {
+		return "", fmt.Errorf("invalid nonce size: got %d want %d", len(nonce), gcm.NonceSize())
+	}
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", err
+	}
+	return string(plaintext), nil
+}
+
+func isLocalhostBaseURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+
+	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	if host == "" {
+		return false
+	}
+	if host == "localhost" || host == "::1" {
+		return true
+	}
+
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // AsValidationError extracts ValidationError from wrapped errors.
