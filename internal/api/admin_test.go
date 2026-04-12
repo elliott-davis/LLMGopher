@@ -959,10 +959,18 @@ func TestHandleGetAPIKeyBudget_Success(t *testing.T) {
 	handler := api.HandleGetAPIKeyBudget(db)
 	keyID := "66666666-6666-6666-6666-666666666666"
 
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT api_key_id, budget_usd, spent_usd FROM api_key_budgets WHERE api_key_id = $1`)).
+	mock.ExpectQuery(`SELECT[\s\S]+FROM api_key_budgets[\s\S]+WHERE api_key_id = \$1`).
 		WithArgs(keyID).
-		WillReturnRows(sqlmock.NewRows([]string{"api_key_id", "budget_usd", "spent_usd"}).AddRow(
-			keyID, 100.0, 23.45,
+		WillReturnRows(sqlmock.NewRows([]string{
+			"api_key_id",
+			"budget_usd",
+			"spent_usd",
+			"alert_threshold_pct",
+			"budget_duration",
+			"budget_reset_at",
+			"last_alerted_at",
+		}).AddRow(
+			keyID, 100.0, 23.45, 0, "", nil, nil,
 		))
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/admin/keys/"+keyID+"/budget", nil)
@@ -990,8 +998,14 @@ func TestHandleGetAPIKeyBudget_Success(t *testing.T) {
 	if payload["remaining_usd"] != 76.55 {
 		t.Fatalf("remaining_usd = %v, want 76.55", payload["remaining_usd"])
 	}
-	if payload["reset_at"] != nil {
-		t.Fatalf("reset_at = %v, want nil", payload["reset_at"])
+	if payload["alert_threshold_pct"] != nil {
+		t.Fatalf("alert_threshold_pct = %v, want nil", payload["alert_threshold_pct"])
+	}
+	if payload["budget_duration"] != nil {
+		t.Fatalf("budget_duration = %v, want nil", payload["budget_duration"])
+	}
+	if payload["budget_reset_at"] != nil {
+		t.Fatalf("budget_reset_at = %v, want nil", payload["budget_reset_at"])
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -1009,7 +1023,7 @@ func TestHandleGetAPIKeyBudget_NotFound(t *testing.T) {
 	handler := api.HandleGetAPIKeyBudget(db)
 	keyID := "66666666-6666-6666-6666-666666666666"
 
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT api_key_id, budget_usd, spent_usd FROM api_key_budgets WHERE api_key_id = $1`)).
+	mock.ExpectQuery(`SELECT[\s\S]+FROM api_key_budgets[\s\S]+WHERE api_key_id = \$1`).
 		WithArgs(keyID).
 		WillReturnError(sql.ErrNoRows)
 
@@ -1050,6 +1064,78 @@ func TestHandlePutAPIKeyBudget_InvalidBudget_ReturnsBadRequest(t *testing.T) {
 	}
 }
 
+func TestHandlePutAPIKeyBudget_InvalidAlertThreshold_ReturnsBadRequest(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandlePutAPIKeyBudget(db)
+	keyID := "66666666-6666-6666-6666-666666666666"
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/admin/keys/"+keyID+"/budget",
+		bytes.NewBufferString(`{"budget_usd":10,"alert_threshold_pct":100}`),
+	)
+	req.SetPathValue("id", keyID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandlePutAPIKeyBudget_InvalidBudgetDuration_ReturnsBadRequest(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandlePutAPIKeyBudget(db)
+	keyID := "66666666-6666-6666-6666-666666666666"
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/admin/keys/"+keyID+"/budget",
+		bytes.NewBufferString(`{"budget_usd":10,"budget_duration":"yearly","budget_reset_at":"2026-01-01T00:00:00Z"}`),
+	)
+	req.SetPathValue("id", keyID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandlePutAPIKeyBudget_DurationRequiresResetAt_ReturnsBadRequest(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandlePutAPIKeyBudget(db)
+	keyID := "66666666-6666-6666-6666-666666666666"
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/admin/keys/"+keyID+"/budget",
+		bytes.NewBufferString(`{"budget_usd":10,"budget_duration":"monthly"}`),
+	)
+	req.SetPathValue("id", keyID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
 func TestHandlePutAPIKeyBudget_Success(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -1059,21 +1145,54 @@ func TestHandlePutAPIKeyBudget_Success(t *testing.T) {
 
 	handler := api.HandlePutAPIKeyBudget(db)
 	keyID := "66666666-6666-6666-6666-666666666666"
+	resetAt := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	lastAlertedAt := time.Date(2026, 5, 31, 23, 0, 0, 0, time.UTC)
+	threshold := 80
+	duration := "monthly"
 
-	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO api_key_budgets (api_key_id, budget_usd, spent_usd, created_at, updated_at)
-		 VALUES ($1, $2, 0, NOW(), NOW())
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO api_key_budgets (
+			api_key_id,
+			budget_usd,
+			spent_usd,
+			alert_threshold_pct,
+			budget_duration,
+			budget_reset_at,
+			last_alerted_at,
+			created_at,
+			updated_at
+		)
+		 VALUES ($1, $2, 0, $3, $4, $5, NULL, NOW(), NOW())
 		 ON CONFLICT (api_key_id) DO UPDATE
-		 SET budget_usd = EXCLUDED.budget_usd, updated_at = NOW()
-		 RETURNING api_key_id, budget_usd, spent_usd`)).
-		WithArgs(keyID, 250.0).
-		WillReturnRows(sqlmock.NewRows([]string{"api_key_id", "budget_usd", "spent_usd"}).AddRow(
-			keyID, 250.0, 120.5,
+		 SET budget_usd = EXCLUDED.budget_usd,
+		     alert_threshold_pct = EXCLUDED.alert_threshold_pct,
+		     budget_duration = EXCLUDED.budget_duration,
+		     budget_reset_at = EXCLUDED.budget_reset_at,
+		     updated_at = NOW()
+		 RETURNING
+		    api_key_id,
+		    budget_usd,
+		    spent_usd,
+		    COALESCE(alert_threshold_pct, 0),
+		    COALESCE(budget_duration, ''),
+		    budget_reset_at,
+		    last_alerted_at`)).
+		WithArgs(keyID, 250.0, &threshold, &duration, &resetAt).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"api_key_id",
+			"budget_usd",
+			"spent_usd",
+			"alert_threshold_pct",
+			"budget_duration",
+			"budget_reset_at",
+			"last_alerted_at",
+		}).AddRow(
+			keyID, 250.0, 120.5, 80, "monthly", resetAt, lastAlertedAt,
 		))
 
 	req := httptest.NewRequest(
 		http.MethodPut,
 		"/v1/admin/keys/"+keyID+"/budget",
-		bytes.NewBufferString(`{"budget_usd":250}`),
+		bytes.NewBufferString(`{"budget_usd":250,"alert_threshold_pct":80,"budget_duration":"monthly","budget_reset_at":"2026-06-01T00:00:00Z"}`),
 	)
 	req.SetPathValue("id", keyID)
 	w := httptest.NewRecorder()
@@ -1095,6 +1214,15 @@ func TestHandlePutAPIKeyBudget_Success(t *testing.T) {
 	}
 	if payload["remaining_usd"] != 129.5 {
 		t.Fatalf("remaining_usd = %v, want 129.5", payload["remaining_usd"])
+	}
+	if payload["alert_threshold_pct"] != float64(80) {
+		t.Fatalf("alert_threshold_pct = %v, want 80", payload["alert_threshold_pct"])
+	}
+	if payload["budget_duration"] != "monthly" {
+		t.Fatalf("budget_duration = %v, want monthly", payload["budget_duration"])
+	}
+	if payload["budget_reset_at"] != "2026-06-01T00:00:00Z" {
+		t.Fatalf("budget_reset_at = %v, want 2026-06-01T00:00:00Z", payload["budget_reset_at"])
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -1169,12 +1297,27 @@ func TestHandleResetAPIKeyBudget_SetsSpentToZero(t *testing.T) {
 	keyID := "66666666-6666-6666-6666-666666666666"
 
 	mock.ExpectQuery(regexp.QuoteMeta(`UPDATE api_key_budgets
-		 SET spent_usd = 0, updated_at = NOW()
+		 SET spent_usd = 0, last_alerted_at = NULL, updated_at = NOW()
 		 WHERE api_key_id = $1
-		 RETURNING api_key_id, budget_usd, spent_usd`)).
+		 RETURNING
+		    api_key_id,
+		    budget_usd,
+		    spent_usd,
+		    COALESCE(alert_threshold_pct, 0),
+		    COALESCE(budget_duration, ''),
+		    budget_reset_at,
+		    last_alerted_at`)).
 		WithArgs(keyID).
-		WillReturnRows(sqlmock.NewRows([]string{"api_key_id", "budget_usd", "spent_usd"}).AddRow(
-			keyID, 250.0, 0.0,
+		WillReturnRows(sqlmock.NewRows([]string{
+			"api_key_id",
+			"budget_usd",
+			"spent_usd",
+			"alert_threshold_pct",
+			"budget_duration",
+			"budget_reset_at",
+			"last_alerted_at",
+		}).AddRow(
+			keyID, 250.0, 0.0, 0, "", nil, nil,
 		))
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/admin/keys/"+keyID+"/budget/reset", nil)

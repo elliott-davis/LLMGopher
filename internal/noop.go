@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"time"
 
 	"github.com/ed007183/llmgopher/pkg/llm"
 )
@@ -31,6 +32,14 @@ func (NoopBudgetTracker) RemainingBudget(_ context.Context, _ string) (float64, 
 }
 
 func (NoopBudgetTracker) Deduct(_ context.Context, _ string, _ float64) error { return nil }
+
+func (NoopBudgetTracker) GetBudget(_ context.Context, _ string) (*llm.BudgetState, error) {
+	return nil, nil
+}
+
+func (NoopBudgetTracker) MarkBudgetAlerted(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}
 
 // NoopPricingLookup returns a conservative default for all models.
 type NoopPricingLookup struct{}

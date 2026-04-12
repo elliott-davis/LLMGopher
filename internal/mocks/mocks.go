@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/ed007183/llmgopher/pkg/llm"
 )
@@ -135,16 +136,25 @@ func (m *MockAuditLogger) GetEntries() []*llm.AuditEntry {
 // MockBudgetTracker implements llm.BudgetTracker. Set Remaining to control
 // the reported budget. Set DeductErr to simulate exhausted budgets.
 type MockBudgetTracker struct {
-	Remaining float64
-	DeductErr error
+	Remaining      float64
+	DeductErr      error
+	GetBudgetErr   error
+	MarkAlertedErr error
+	BudgetState    *llm.BudgetState
 
-	mu         sync.Mutex
-	Deductions []deduction
+	mu               sync.Mutex
+	Deductions       []deduction
+	MarkedAlertCalls []markedAlertCall
 }
 
 type deduction struct {
 	APIKeyID string
 	CostUSD  float64
+}
+
+type markedAlertCall struct {
+	APIKeyID  string
+	AlertedAt time.Time
 }
 
 func (m *MockBudgetTracker) RemainingBudget(_ context.Context, _ string) (float64, error) {
@@ -156,6 +166,20 @@ func (m *MockBudgetTracker) Deduct(_ context.Context, apiKeyID string, costUSD f
 	m.Deductions = append(m.Deductions, deduction{APIKeyID: apiKeyID, CostUSD: costUSD})
 	m.mu.Unlock()
 	return m.DeductErr
+}
+
+func (m *MockBudgetTracker) GetBudget(_ context.Context, _ string) (*llm.BudgetState, error) {
+	return m.BudgetState, m.GetBudgetErr
+}
+
+func (m *MockBudgetTracker) MarkBudgetAlerted(_ context.Context, apiKeyID string, alertedAt time.Time) error {
+	m.mu.Lock()
+	m.MarkedAlertCalls = append(m.MarkedAlertCalls, markedAlertCall{
+		APIKeyID:  apiKeyID,
+		AlertedAt: alertedAt,
+	})
+	m.mu.Unlock()
+	return m.MarkAlertedErr
 }
 
 // ---------------------------------------------------------------------------

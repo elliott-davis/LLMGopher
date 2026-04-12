@@ -289,15 +289,20 @@ type updateAPIKeyRequest struct {
 }
 
 type upsertBudgetRequest struct {
-	BudgetUSD float64 `json:"budget_usd"`
+	BudgetUSD         float64    `json:"budget_usd"`
+	AlertThresholdPct *int       `json:"alert_threshold_pct"`
+	BudgetDuration    *string    `json:"budget_duration"`
+	BudgetResetAt     *time.Time `json:"budget_reset_at"`
 }
 
 type budgetResponse struct {
-	APIKeyID     string     `json:"api_key_id"`
-	BudgetUSD    float64    `json:"budget_usd"`
-	SpentUSD     float64    `json:"spent_usd"`
-	RemainingUSD float64    `json:"remaining_usd"`
-	ResetAt      *time.Time `json:"reset_at"`
+	APIKeyID          string     `json:"api_key_id"`
+	BudgetUSD         float64    `json:"budget_usd"`
+	SpentUSD          float64    `json:"spent_usd"`
+	RemainingUSD      float64    `json:"remaining_usd"`
+	AlertThresholdPct *int       `json:"alert_threshold_pct"`
+	BudgetDuration    *string    `json:"budget_duration"`
+	BudgetResetAt     *time.Time `json:"budget_reset_at"`
 }
 
 type validateCredentialRequest struct {
@@ -1274,8 +1279,36 @@ func HandlePutAPIKeyBudget(db *sql.DB) http.HandlerFunc {
 			WriteError(w, http.StatusBadRequest, "budget_usd must be greater than 0", "invalid_request_error")
 			return
 		}
+		if payload.AlertThresholdPct != nil {
+			if *payload.AlertThresholdPct < 1 || *payload.AlertThresholdPct > 99 {
+				WriteError(w, http.StatusBadRequest, "alert_threshold_pct must be between 1 and 99", "invalid_request_error")
+				return
+			}
+		}
 
-		state, err := storage.UpsertBudget(r.Context(), db, id, payload.BudgetUSD)
+		var normalizedDuration *string
+		if payload.BudgetDuration != nil {
+			normalized, ok := normalizeBudgetDuration(*payload.BudgetDuration)
+			if !ok {
+				WriteError(w, http.StatusBadRequest, "budget_duration must be one of: daily, weekly, monthly", "invalid_request_error")
+				return
+			}
+			normalizedDuration = &normalized
+			if payload.BudgetResetAt == nil {
+				WriteError(w, http.StatusBadRequest, "budget_reset_at is required when budget_duration is set", "invalid_request_error")
+				return
+			}
+		}
+
+		state, err := storage.UpsertBudget(
+			r.Context(),
+			db,
+			id,
+			payload.BudgetUSD,
+			payload.AlertThresholdPct,
+			normalizedDuration,
+			payload.BudgetResetAt,
+		)
 		if err != nil {
 			status := http.StatusInternalServerError
 			msg := "failed to upsert api key budget"
@@ -1367,12 +1400,39 @@ func HandleResetAPIKeyBudget(db *sql.DB) http.HandlerFunc {
 }
 
 func toBudgetResponse(state *storage.BudgetState) budgetResponse {
+	var alertThreshold *int
+	if state.AlertThresholdPct > 0 {
+		alert := state.AlertThresholdPct
+		alertThreshold = &alert
+	}
+
+	var budgetDuration *string
+	if state.BudgetDuration != "" {
+		duration := state.BudgetDuration
+		budgetDuration = &duration
+	}
+
 	return budgetResponse{
-		APIKeyID:     state.APIKeyID,
-		BudgetUSD:    state.BudgetUSD,
-		SpentUSD:     state.SpentUSD,
-		RemainingUSD: state.BudgetUSD - state.SpentUSD,
-		ResetAt:      state.ResetAt,
+		APIKeyID:          state.APIKeyID,
+		BudgetUSD:         state.BudgetUSD,
+		SpentUSD:          state.SpentUSD,
+		RemainingUSD:      state.BudgetUSD - state.SpentUSD,
+		AlertThresholdPct: alertThreshold,
+		BudgetDuration:    budgetDuration,
+		BudgetResetAt:     state.BudgetResetAt,
+	}
+}
+
+func normalizeBudgetDuration(raw string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "daily":
+		return "daily", true
+	case "weekly":
+		return "weekly", true
+	case "monthly":
+		return "monthly", true
+	default:
+		return "", false
 	}
 }
 

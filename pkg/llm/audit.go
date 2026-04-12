@@ -30,6 +30,17 @@ type AuditLogger interface {
 	Log(ctx context.Context, entry *AuditEntry) error
 }
 
+// BudgetState captures persisted budget configuration and current spend.
+type BudgetState struct {
+	APIKeyID          string
+	BudgetUSD         float64
+	SpentUSD          float64
+	AlertThresholdPct int
+	BudgetDuration    string
+	BudgetResetAt     *time.Time
+	LastAlertedAt     *time.Time
+}
+
 // BudgetTracker manages per-key or per-org spend limits.
 type BudgetTracker interface {
 	// RemainingBudget returns the remaining budget in USD for the given key.
@@ -38,6 +49,13 @@ type BudgetTracker interface {
 	// Deduct subtracts costUSD from the budget. Returns an error if the
 	// deduction would exceed the limit (budget exhausted).
 	Deduct(ctx context.Context, apiKeyID string, costUSD float64) error
+
+	// GetBudget returns the persisted budget state for the key.
+	// A missing budget should return (nil, nil).
+	GetBudget(ctx context.Context, apiKeyID string) (*BudgetState, error)
+
+	// MarkBudgetAlerted updates the last alerted timestamp for threshold alerts.
+	MarkBudgetAlerted(ctx context.Context, apiKeyID string, alertedAt time.Time) error
 }
 
 // ModelPricing holds per-token costs in USD.

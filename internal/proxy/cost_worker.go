@@ -123,6 +123,8 @@ func (cw *CostWorker) deductAndLog(
 				"cost_usd", cost,
 				"request_id", meta.RequestID,
 			)
+		} else {
+			cw.emitBudgetThresholdAlert(ctx, meta, cost)
 		}
 	}
 
@@ -163,4 +165,45 @@ func (cw *CostWorker) deductAndLog(
 		"streaming", meta.Streaming,
 		"status", statusCode,
 	)
+}
+
+func (cw *CostWorker) emitBudgetThresholdAlert(ctx context.Context, meta *RequestMeta, cost float64) {
+	state, err := cw.budgetTracker.GetBudget(ctx, meta.APIKeyID)
+	if err != nil {
+		cw.logger.Warn("failed to fetch budget state for alerting",
+			"error", err,
+			"api_key_id", meta.APIKeyID,
+			"request_id", meta.RequestID,
+		)
+		return
+	}
+	if state == nil || state.BudgetUSD <= 0 || state.AlertThresholdPct <= 0 {
+		return
+	}
+
+	pctSpent := (state.SpentUSD / state.BudgetUSD) * 100
+	if pctSpent < float64(state.AlertThresholdPct) {
+		return
+	}
+	if state.LastAlertedAt != nil && time.Since(*state.LastAlertedAt) <= time.Hour {
+		return
+	}
+
+	alertedAt := time.Now().UTC()
+	cw.logger.Warn("budget_threshold_reached",
+		"api_key_id", meta.APIKeyID,
+		"request_id", meta.RequestID,
+		"spent_usd", state.SpentUSD,
+		"budget_usd", state.BudgetUSD,
+		"pct_spent", pctSpent,
+		"alert_threshold_pct", state.AlertThresholdPct,
+		"cost_usd", cost,
+	)
+	if err := cw.budgetTracker.MarkBudgetAlerted(ctx, meta.APIKeyID, alertedAt); err != nil {
+		cw.logger.Warn("failed to persist budget alert timestamp",
+			"error", err,
+			"api_key_id", meta.APIKeyID,
+			"request_id", meta.RequestID,
+		)
+	}
 }

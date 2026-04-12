@@ -1,7 +1,7 @@
 # Spec 10: Budget Lifecycle (Alerts & Periodic Resets)
 
 ## Status
-pending
+completed
 
 ## Goal
 Add two missing budget features: (1) soft alerts that warn when a key approaches its limit, and (2) automatic periodic budget resets so keys don't have to be manually reset each billing cycle.
@@ -13,7 +13,7 @@ Spec 07 adds `reset_at` to the budget row and exposes budget CRUD. This spec dep
 
 ## Requirements
 
-### 1. Migration (`internal/storage/migrations/00004_budget_lifecycle.sql`)
+### 1. Migration (`internal/storage/migrations/00006_budget_lifecycle.sql`)
 
 ```sql
 ALTER TABLE api_key_budgets
@@ -104,16 +104,17 @@ Validate: `alert_threshold_pct` in range 1–99 if provided; `budget_duration` m
 - Retroactive reset (only resets at scheduled `budget_reset_at`, not backdated)
 
 ## Acceptance Criteria
-- [ ] A key at 80% of its budget with `alert_threshold_pct: 80` logs a `budget_threshold_reached` warning
-- [ ] The alert does not fire again within 1 hour for the same key
-- [ ] A key with `budget_duration: "monthly"` and `budget_reset_at` in the past gets `spent_usd` reset to 0
-- [ ] `budget_reset_at` advances by one month after reset
-- [ ] A key without `budget_duration` is never auto-reset
-- [ ] Migration runs cleanly on existing schema
-- [ ] BudgetResetWorker starts at gateway startup and stops on graceful shutdown
+- [x] A key at 80% of its budget with `alert_threshold_pct: 80` logs a `budget_threshold_reached` warning
+- [x] The alert does not fire again within 1 hour for the same key
+- [x] A key with `budget_duration: "monthly"` and `budget_reset_at` in the past gets `spent_usd` reset to 0
+- [x] `budget_reset_at` advances by one month after reset
+- [x] A key without `budget_duration` is never auto-reset
+- [x] Migration runs cleanly on existing schema
+- [x] BudgetResetWorker starts at gateway startup and stops on graceful shutdown
 
 ## Key Files
-- `internal/storage/migrations/00004_budget_lifecycle.sql` — new migration
+- `internal/storage/migrations/00006_budget_lifecycle.sql` — new migration
 - `internal/storage/budget_tracker.go` — reset worker, updated types and queries
 - `internal/proxy/cost_worker.go` — alert logic in deductAndLog
+- `internal/api/admin.go` — budget lifecycle request validation and response fields
 - `cmd/gateway/main.go` — start reset worker

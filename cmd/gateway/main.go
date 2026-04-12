@@ -75,6 +75,7 @@ func run(cmd *cobra.Command, _ []string) error {
 	defer auditLogger.Close()
 
 	budgetTracker := storage.NewPgBudgetTracker(db, logger)
+	go storage.StartBudgetResetWorker(ctx, db, logger)
 
 	pricingStore := storage.NewPgPricingStore(db, logger)
 	if err := pricingStore.Load(ctx); err != nil {
