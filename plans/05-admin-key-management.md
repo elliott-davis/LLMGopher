@@ -1,7 +1,7 @@
 # Spec 05: API Key Management Improvements
 
 ## Status
-pending
+completed
 
 ## Goal
 Extend API key management with four capabilities that are essential for production operation: hard delete, key expiration, metadata/tags for cost attribution, and per-key model allowlists.
@@ -19,7 +19,7 @@ Auth middleware reads the state cache (`internal/middleware/auth.go`) using `Aut
 
 ## Requirements
 
-### 1. Migration (`internal/storage/migrations/00003_api_key_enhancements.sql`)
+### 1. Migration (`internal/storage/migrations/00004_api_key_enhancements.sql`)
 ```sql
 ALTER TABLE api_keys
   ADD COLUMN expires_at TIMESTAMPTZ,
@@ -86,19 +86,21 @@ After a key is deleted or updated via the admin API, the state cache will pick u
 - Allowed endpoints per key (model-level is sufficient for now)
 
 ## Acceptance Criteria
-- [ ] `DELETE /v1/admin/keys/{id}` removes the key from DB and it stops working within 5 seconds
-- [ ] `PUT /v1/admin/keys/{id}` updates the key's fields
-- [ ] A key with `expires_at` in the past returns 401
-- [ ] A key with `allowed_models: ["gpt-4o"]` returns 403 when calling `claude-3-5-sonnet`
-- [ ] `metadata` is persisted and returned in key list/create responses
-- [ ] Migration runs cleanly on an existing schema
-- [ ] Existing keys (no `expires_at`, no `allowed_models`) continue to work unchanged
+- [x] `DELETE /v1/admin/keys/{id}` removes the key from DB and it stops working within 5 seconds
+- [x] `PUT /v1/admin/keys/{id}` updates the key's fields
+- [x] A key with `expires_at` in the past returns 401
+- [x] A key with `allowed_models: ["gpt-4o"]` returns 403 when calling `claude-3-5-sonnet`
+- [x] `metadata` is persisted and returned in key list/create responses
+- [x] Migration runs cleanly on an existing schema
+- [x] Existing keys (no `expires_at`, no `allowed_models`) continue to work unchanged
 
 ## Key Files
-- `internal/storage/migrations/00003_api_key_enhancements.sql` — new migration
+- `internal/storage/migrations/00004_api_key_enhancements.sql` — new migration (using next available migration number)
 - `pkg/llm/types.go` — extend `APIKeyConfig`
 - `internal/storage/cache.go` — update cache poll query and scan
 - `internal/middleware/auth.go` — expiry check
 - `internal/proxy/handler.go` — model allowlist check
+- `internal/proxy/handler_completions.go` — model allowlist check for completions
+- `internal/proxy/handler_embeddings.go` — model allowlist check for embeddings
 - `internal/api/admin.go` — new delete/update routes and updated create
 - `internal/api/router.go` — wire new routes

@@ -328,13 +328,16 @@ type ModelConfig struct {
 
 // APIKeyConfig represents a managed API credential entry.
 type APIKeyConfig struct {
-	ID           string    `json:"id"`
-	KeyHash      string    `json:"key_hash"`
-	Name         string    `json:"name"`
-	RateLimitRPS int       `json:"rate_limit_rps"`
-	IsActive     bool      `json:"is_active"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID            string            `json:"id"`
+	KeyHash       string            `json:"key_hash"`
+	Name          string            `json:"name"`
+	RateLimitRPS  int               `json:"rate_limit_rps"`
+	IsActive      bool              `json:"is_active"`
+	ExpiresAt     *time.Time        `json:"expires_at,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
+	AllowedModels []string          `json:"allowed_models,omitempty"`
+	CreatedAt     time.Time         `json:"created_at"`
+	UpdatedAt     time.Time         `json:"updated_at"`
 }
 
 // APIKey is an alias for APIKeyConfig.

@@ -340,3 +340,176 @@ func TestHandleDeleteProvider_Success(t *testing.T) {
 		t.Fatalf("unmet SQL expectations: %v", err)
 	}
 }
+
+func TestHandleCreateAPIKey_WithEnhancements_Success(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleCreateAPIKey(db)
+
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO api_keys (
+				id, key_hash, name, rate_limit_rps, is_active, expires_at, metadata, allowed_models, created_at, updated_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::text[], $9, $10)`)).
+		WithArgs(
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			"team-a",
+			250,
+			true,
+			sqlmock.AnyArg(),
+			[]byte(`{"tenant":"acme"}`),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/admin/keys",
+		bytes.NewBufferString(`{
+			"name":"team-a",
+			"rate_limit_rps":250,
+			"expires_at":"2027-01-01T12:00:00Z",
+			"metadata":{"tenant":"acme"},
+			"allowed_models":["gpt-4o"]
+		}`),
+	)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", w.Code, http.StatusCreated, w.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload["name"] != "team-a" {
+		t.Fatalf("name = %v, want team-a", payload["name"])
+	}
+	if payload["rate_limit_rps"] != float64(250) {
+		t.Fatalf("rate_limit_rps = %v, want 250", payload["rate_limit_rps"])
+	}
+	if payload["api_key"] == "" {
+		t.Fatal("api_key should be present")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestHandleUpdateAPIKey_Success(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleUpdateAPIKey(db)
+	keyID := "44444444-4444-4444-4444-444444444444"
+	now := time.Now().UTC()
+
+	mock.ExpectQuery(regexp.QuoteMeta(`UPDATE api_keys
+			 SET name = CASE WHEN $1 THEN $2 ELSE name END,
+			     rate_limit_rps = CASE WHEN $3 THEN $4 ELSE rate_limit_rps END,
+			     expires_at = CASE WHEN $5 THEN $6 ELSE expires_at END,
+			     metadata = CASE WHEN $7 THEN $8::jsonb ELSE metadata END,
+			     allowed_models = CASE WHEN $9 THEN $10::text[] ELSE allowed_models END,
+			     is_active = CASE WHEN $11 THEN $12 ELSE is_active END,
+			     updated_at = $13
+			 WHERE id = $14
+			 RETURNING id, key_hash, name, rate_limit_rps, is_active, expires_at, metadata, to_json(allowed_models), created_at, updated_at`)).
+		WithArgs(
+			true,
+			"updated-key",
+			true,
+			500,
+			true,
+			nil,
+			true,
+			[]byte(`{"cost_center":"ml"}`),
+			true,
+			sqlmock.AnyArg(),
+			true,
+			false,
+			sqlmock.AnyArg(),
+			keyID,
+		).
+		WillReturnRows(
+			sqlmock.NewRows([]string{"id", "key_hash", "name", "rate_limit_rps", "is_active", "expires_at", "metadata", "allowed_models", "created_at", "updated_at"}).
+				AddRow(keyID, "hash", "updated-key", 500, false, nil, []byte(`{"cost_center":"ml"}`), []byte(`["gpt-4o"]`), now, now),
+		)
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/admin/keys/"+keyID,
+		bytes.NewBufferString(`{
+			"name":"updated-key",
+			"rate_limit_rps":500,
+			"expires_at":null,
+			"metadata":{"cost_center":"ml"},
+			"allowed_models":["gpt-4o"],
+			"is_active":false
+		}`),
+	)
+	req.SetPathValue("id", keyID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload["name"] != "updated-key" {
+		t.Fatalf("name = %v, want updated-key", payload["name"])
+	}
+	if payload["is_active"] != false {
+		t.Fatalf("is_active = %v, want false", payload["is_active"])
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestHandleDeleteAPIKey_Success(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleDeleteAPIKey(db)
+	keyID := "55555555-5555-5555-5555-555555555555"
+
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM api_keys WHERE id = $1`)).
+		WithArgs(keyID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM api_key_budgets WHERE api_key_id = $1`)).
+		WithArgs(keyID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	req := httptest.NewRequest(http.MethodDelete, "/v1/admin/keys/"+keyID, nil)
+	req.SetPathValue("id", keyID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusNoContent)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}

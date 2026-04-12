@@ -88,16 +88,51 @@ type createProviderRequest struct {
 }
 
 type createAPIKeyRequest struct {
-	Name         string `json:"name"`
-	RateLimitRPS int    `json:"rate_limit_rps"`
+	Name          string            `json:"name"`
+	RateLimitRPS  int               `json:"rate_limit_rps"`
+	ExpiresAt     *time.Time        `json:"expires_at,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
+	AllowedModels []string          `json:"allowed_models,omitempty"`
 }
 
 type createAPIKeyResponse struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	RateLimitRPS int    `json:"rate_limit_rps"`
-	IsActive     bool   `json:"is_active"`
-	APIKey       string `json:"api_key"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	RateLimitRPS  int               `json:"rate_limit_rps"`
+	IsActive      bool              `json:"is_active"`
+	ExpiresAt     *time.Time        `json:"expires_at,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
+	AllowedModels []string          `json:"allowed_models,omitempty"`
+	APIKey        string            `json:"api_key"`
+}
+
+type optionalTime struct {
+	Set   bool
+	Value *time.Time
+}
+
+func (o *optionalTime) UnmarshalJSON(data []byte) error {
+	o.Set = true
+	if string(data) == "null" {
+		o.Value = nil
+		return nil
+	}
+
+	var parsed time.Time
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return err
+	}
+	o.Value = &parsed
+	return nil
+}
+
+type updateAPIKeyRequest struct {
+	Name          *string           `json:"name,omitempty"`
+	RateLimitRPS  *int              `json:"rate_limit_rps,omitempty"`
+	ExpiresAt     optionalTime      `json:"expires_at,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
+	AllowedModels []string          `json:"allowed_models,omitempty"`
+	IsActive      *bool             `json:"is_active,omitempty"`
 }
 
 type validateCredentialRequest struct {
@@ -738,6 +773,16 @@ func HandleCreateAPIKey(db *sql.DB) http.HandlerFunc {
 			WriteError(w, http.StatusBadRequest, "name and non-negative rate_limit_rps are required", "invalid_request_error")
 			return
 		}
+		if payload.Metadata == nil {
+			payload.Metadata = map[string]string{}
+		}
+		metadataJSON, err := json.Marshal(payload.Metadata)
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "metadata must be a string map", "invalid_request_error")
+			return
+		}
+
+		allowedModelsParam := textArrayLiteral(payload.AllowedModels)
 
 		rawKey, err := generateRawAPIKey()
 		if err != nil {
@@ -750,12 +795,17 @@ func HandleCreateAPIKey(db *sql.DB) http.HandlerFunc {
 		keyHash := hashAPIKey(rawKey)
 		_, err = db.ExecContext(
 			r.Context(),
-			`INSERT INTO api_keys (id, key_hash, name, rate_limit_rps, is_active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			`INSERT INTO api_keys (
+				id, key_hash, name, rate_limit_rps, is_active, expires_at, metadata, allowed_models, created_at, updated_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::text[], $9, $10)`,
 			id,
 			keyHash,
 			name,
 			payload.RateLimitRPS,
 			true,
+			payload.ExpiresAt,
+			metadataJSON,
+			allowedModelsParam,
 			now,
 			now,
 		)
@@ -771,13 +821,242 @@ func HandleCreateAPIKey(db *sql.DB) http.HandlerFunc {
 		}
 
 		WriteJSON(w, http.StatusCreated, createAPIKeyResponse{
-			ID:           id,
-			Name:         name,
-			RateLimitRPS: payload.RateLimitRPS,
-			IsActive:     true,
-			APIKey:       rawKey,
+			ID:            id,
+			Name:          name,
+			RateLimitRPS:  payload.RateLimitRPS,
+			IsActive:      true,
+			ExpiresAt:     payload.ExpiresAt,
+			Metadata:      payload.Metadata,
+			AllowedModels: payload.AllowedModels,
+			APIKey:        rawKey,
 		})
 	}
+}
+
+// HandleUpdateAPIKey updates mutable API key fields by key ID.
+func HandleUpdateAPIKey(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			WriteError(w, http.StatusServiceUnavailable, "database unavailable", "service_unavailable")
+			return
+		}
+
+		id := strings.TrimSpace(r.PathValue("id"))
+		if id == "" {
+			WriteError(w, http.StatusBadRequest, "api key id is required", "invalid_request_error")
+			return
+		}
+		if _, err := uuid.Parse(id); err != nil {
+			WriteError(w, http.StatusBadRequest, "api key id must be a valid UUID", "invalid_request_error")
+			return
+		}
+
+		var payload updateAPIKeyRequest
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			WriteError(w, http.StatusBadRequest, "invalid JSON body", "invalid_request_error")
+			return
+		}
+
+		setName := payload.Name != nil
+		name := ""
+		if setName {
+			name = strings.TrimSpace(*payload.Name)
+			if name == "" {
+				WriteError(w, http.StatusBadRequest, "name cannot be empty", "invalid_request_error")
+				return
+			}
+		}
+
+		setRateLimit := payload.RateLimitRPS != nil
+		rateLimit := 0
+		if setRateLimit {
+			rateLimit = *payload.RateLimitRPS
+			if rateLimit < 0 {
+				WriteError(w, http.StatusBadRequest, "rate_limit_rps must be non-negative", "invalid_request_error")
+				return
+			}
+		}
+
+		setExpiresAt := payload.ExpiresAt.Set
+		expiresAt := payload.ExpiresAt.Value
+
+		setMetadata := payload.Metadata != nil
+		var metadataJSON []byte
+		if setMetadata {
+			var err error
+			metadataJSON, err = json.Marshal(payload.Metadata)
+			if err != nil {
+				WriteError(w, http.StatusBadRequest, "metadata must be a string map", "invalid_request_error")
+				return
+			}
+		}
+
+		setAllowedModels := payload.AllowedModels != nil
+		allowedModels := textArrayLiteral(payload.AllowedModels)
+
+		setIsActive := payload.IsActive != nil
+		isActive := false
+		if setIsActive {
+			isActive = *payload.IsActive
+		}
+
+		if !setName && !setRateLimit && !setExpiresAt && !setMetadata && !setAllowedModels && !setIsActive {
+			WriteError(w, http.StatusBadRequest, "at least one mutable field must be provided", "invalid_request_error")
+			return
+		}
+
+		updated := llm.APIKey{}
+		var metadataRaw []byte
+		var allowedModelsRaw []byte
+		err := db.QueryRowContext(
+			r.Context(),
+			`UPDATE api_keys
+			 SET name = CASE WHEN $1 THEN $2 ELSE name END,
+			     rate_limit_rps = CASE WHEN $3 THEN $4 ELSE rate_limit_rps END,
+			     expires_at = CASE WHEN $5 THEN $6 ELSE expires_at END,
+			     metadata = CASE WHEN $7 THEN $8::jsonb ELSE metadata END,
+			     allowed_models = CASE WHEN $9 THEN $10::text[] ELSE allowed_models END,
+			     is_active = CASE WHEN $11 THEN $12 ELSE is_active END,
+			     updated_at = $13
+			 WHERE id = $14
+			 RETURNING id, key_hash, name, rate_limit_rps, is_active, expires_at, metadata, to_json(allowed_models), created_at, updated_at`,
+			setName,
+			name,
+			setRateLimit,
+			rateLimit,
+			setExpiresAt,
+			expiresAt,
+			setMetadata,
+			metadataJSON,
+			setAllowedModels,
+			allowedModels,
+			setIsActive,
+			isActive,
+			time.Now().UTC(),
+			id,
+		).Scan(
+			&updated.ID,
+			&updated.KeyHash,
+			&updated.Name,
+			&updated.RateLimitRPS,
+			&updated.IsActive,
+			&updated.ExpiresAt,
+			&metadataRaw,
+			&allowedModelsRaw,
+			&updated.CreatedAt,
+			&updated.UpdatedAt,
+		)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				WriteError(w, http.StatusNotFound, "api key not found", "invalid_request_error")
+				return
+			}
+			status := http.StatusInternalServerError
+			msg := "failed to update api key"
+			if errors.Is(err, sql.ErrConnDone) {
+				status = http.StatusServiceUnavailable
+				msg = "database unavailable"
+			}
+			WriteError(w, status, msg, "invalid_request_error")
+			return
+		}
+		if len(metadataRaw) > 0 {
+			if err := json.Unmarshal(metadataRaw, &updated.Metadata); err != nil {
+				WriteError(w, http.StatusInternalServerError, "failed to parse api key metadata", "server_error")
+				return
+			}
+		}
+		if len(allowedModelsRaw) > 0 && string(allowedModelsRaw) != "null" {
+			if err := json.Unmarshal(allowedModelsRaw, &updated.AllowedModels); err != nil {
+				WriteError(w, http.StatusInternalServerError, "failed to parse api key allowed models", "server_error")
+				return
+			}
+		}
+
+		WriteJSON(w, http.StatusOK, updated)
+	}
+}
+
+// HandleDeleteAPIKey hard-deletes an API key and related budget row by key ID.
+func HandleDeleteAPIKey(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			WriteError(w, http.StatusServiceUnavailable, "database unavailable", "service_unavailable")
+			return
+		}
+
+		id := strings.TrimSpace(r.PathValue("id"))
+		if id == "" {
+			WriteError(w, http.StatusBadRequest, "api key id is required", "invalid_request_error")
+			return
+		}
+		if _, err := uuid.Parse(id); err != nil {
+			WriteError(w, http.StatusBadRequest, "api key id must be a valid UUID", "invalid_request_error")
+			return
+		}
+
+		tx, err := db.BeginTx(r.Context(), nil)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, "failed to delete api key", "invalid_request_error")
+			return
+		}
+		defer tx.Rollback()
+
+		result, err := tx.ExecContext(r.Context(), `DELETE FROM api_keys WHERE id = $1`, id)
+		if err != nil {
+			status := http.StatusInternalServerError
+			msg := "failed to delete api key"
+			if errors.Is(err, sql.ErrConnDone) {
+				status = http.StatusServiceUnavailable
+				msg = "database unavailable"
+			}
+			WriteError(w, status, msg, "invalid_request_error")
+			return
+		}
+
+		rowsAffected, _ := result.RowsAffected()
+		if rowsAffected == 0 {
+			WriteError(w, http.StatusNotFound, "api key not found", "invalid_request_error")
+			return
+		}
+
+		if _, err := tx.ExecContext(r.Context(), `DELETE FROM api_key_budgets WHERE api_key_id = $1`, id); err != nil {
+			status := http.StatusInternalServerError
+			msg := "failed to delete api key budget"
+			if errors.Is(err, sql.ErrConnDone) {
+				status = http.StatusServiceUnavailable
+				msg = "database unavailable"
+			}
+			WriteError(w, status, msg, "invalid_request_error")
+			return
+		}
+
+		if err := tx.Commit(); err != nil {
+			WriteError(w, http.StatusInternalServerError, "failed to delete api key", "invalid_request_error")
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func textArrayLiteral(values []string) *string {
+	if values == nil {
+		return nil
+	}
+	if len(values) == 0 {
+		empty := "{}"
+		return &empty
+	}
+
+	escaped := make([]string, 0, len(values))
+	for _, v := range values {
+		safe := strings.ReplaceAll(v, `\`, `\\`)
+		safe = strings.ReplaceAll(safe, `"`, `\"`)
+		escaped = append(escaped, `"`+safe+`"`)
+	}
+	literal := "{" + strings.Join(escaped, ",") + "}"
+	return &literal
 }
 
 func encryptProviderCredential(key, plaintext []byte) (ciphertext []byte, nonce []byte, err error) {

@@ -41,6 +41,8 @@ func NewRouter(deps *Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/admin/models", HandleGetModels(deps.StateCache))
 	mux.HandleFunc("GET /v1/admin/providers", HandleGetProviders(deps.StateCache))
 	mux.HandleFunc("POST /v1/admin/keys", HandleCreateAPIKey(deps.DB))
+	mux.HandleFunc("PUT /v1/admin/keys/{id}", HandleUpdateAPIKey(deps.DB))
+	mux.HandleFunc("DELETE /v1/admin/keys/{id}", HandleDeleteAPIKey(deps.DB))
 	mux.HandleFunc("POST /api/v1/credentials/validate", HandleValidateCredential(deps.CredentialValidator))
 	mux.HandleFunc("POST /v1/admin/providers", HandleCreateProviderWithValidation(deps.DB, deps.ProviderCredentialsKey, deps.CredentialValidator))
 	mux.HandleFunc("POST /v1/admin/models", HandleCreateModel(deps.DB))

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ed007183/llmgopher/internal/storage"
 )
@@ -105,6 +106,17 @@ func AuthWithStateCache(stateCache *storage.StateCache, logger *slog.Logger) Mid
 				)
 				http.Error(w,
 					`{"error":{"message":"invalid API key","type":"authentication_error"}}`,
+					http.StatusUnauthorized,
+				)
+				return
+			}
+			if key.ExpiresAt != nil && time.Now().After(*key.ExpiresAt) {
+				logger.Warn("expired API key",
+					"request_id", GetRequestID(r.Context()),
+					"api_key_id", key.ID,
+				)
+				http.Error(w,
+					`{"error":{"message":"API key has expired","type":"authentication_error"}}`,
 					http.StatusUnauthorized,
 				)
 				return

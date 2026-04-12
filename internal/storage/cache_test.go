@@ -59,6 +59,15 @@ func TestStateCacheRefresh_SuccessSwapsState(t *testing.T) {
 	if key.ID != "key-001" {
 		t.Fatalf("api key id = %q, want %q", key.ID, "key-001")
 	}
+	if key.Metadata["team"] != "platform" {
+		t.Fatalf("metadata team = %q, want %q", key.Metadata["team"], "platform")
+	}
+	if len(key.AllowedModels) != 1 || key.AllowedModels[0] != "gpt-4o" {
+		t.Fatalf("allowed models = %v, want [gpt-4o]", key.AllowedModels)
+	}
+	if got := state.APIKeysByID["key-001"]; got == nil {
+		t.Fatal("expected APIKeysByID to include key-001")
+	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet SQL expectations: %v", err)
@@ -145,10 +154,10 @@ func expectStateQueries(mock sqlmock.Sqlmock, providerID uuid.UUID, now time.Tim
 				AddRow(uuid.NewString(), providerID.String(), "gpt-4o", "production-chat", 128000, now, now),
 		)
 
-	mock.ExpectQuery("SELECT id, key_hash, name, rate_limit_rps, is_active, created_at, updated_at\\s+FROM api_keys\\s+WHERE is_active = TRUE").
+	mock.ExpectQuery("SELECT id, key_hash, name, rate_limit_rps, is_active, expires_at, metadata, to_json\\(allowed_models\\), created_at, updated_at\\s+FROM api_keys\\s+WHERE is_active = TRUE").
 		WillReturnRows(
-			sqlmock.NewRows([]string{"id", "key_hash", "name", "rate_limit_rps", "is_active", "created_at", "updated_at"}).
-				AddRow("key-001", "hash-sk-prod", "production", 100, true, now, now),
+			sqlmock.NewRows([]string{"id", "key_hash", "name", "rate_limit_rps", "is_active", "expires_at", "metadata", "allowed_models", "created_at", "updated_at"}).
+				AddRow("key-001", "hash-sk-prod", "production", 100, true, nil, []byte(`{"team":"platform"}`), []byte(`["gpt-4o"]`), now, now),
 		)
 }
 

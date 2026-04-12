@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -69,6 +70,14 @@ func (h *Handler) ServeCompletionsHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error(), "invalid_request_error")
 			return
 		}
+	}
+	if err := enforceAllowedModel(r.Context(), h.stateCache, req.Model); err != nil {
+		if errors.Is(err, errModelNotAllowed) {
+			writeError(w, http.StatusForbidden, err.Error(), "permission_error")
+			return
+		}
+		writeError(w, http.StatusServiceUnavailable, "authorization state unavailable", "server_error")
+		return
 	}
 
 	chatReq := completionToChatRequest(req)

@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
@@ -90,9 +91,10 @@ func (c *StateCache) refresh(ctx context.Context, db *sql.DB) error {
 
 func (c *StateCache) loadState(ctx context.Context, db *sql.DB) (*GatewayState, error) {
 	state := &GatewayState{
-		APIKeys:   make(map[string]*llm.APIKey),
-		Models:    make(map[string]*llm.Model),
-		Providers: make(map[uuid.UUID]*llm.ProviderConfig),
+		APIKeys:     make(map[string]*llm.APIKey),
+		APIKeysByID: make(map[string]*llm.APIKey),
+		Models:      make(map[string]*llm.Model),
+		Providers:   make(map[uuid.UUID]*llm.ProviderConfig),
 	}
 
 	providers, err := db.QueryContext(ctx, `
@@ -157,7 +159,7 @@ func (c *StateCache) loadState(ctx context.Context, db *sql.DB) (*GatewayState, 
 	}
 
 	apiKeys, err := db.QueryContext(ctx, `
-		SELECT id, key_hash, name, rate_limit_rps, is_active, created_at, updated_at
+		SELECT id, key_hash, name, rate_limit_rps, is_active, expires_at, metadata, to_json(allowed_models), created_at, updated_at
 		FROM api_keys
 		WHERE is_active = TRUE
 	`)
@@ -168,18 +170,34 @@ func (c *StateCache) loadState(ctx context.Context, db *sql.DB) (*GatewayState, 
 
 	for apiKeys.Next() {
 		apiKey := &llm.APIKey{}
+		var metadataRaw []byte
+		var allowedModelsRaw []byte
 		if err := apiKeys.Scan(
 			&apiKey.ID,
 			&apiKey.KeyHash,
 			&apiKey.Name,
 			&apiKey.RateLimitRPS,
 			&apiKey.IsActive,
+			&apiKey.ExpiresAt,
+			&metadataRaw,
+			&allowedModelsRaw,
 			&apiKey.CreatedAt,
 			&apiKey.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan api key row: %w", err)
 		}
+		if len(metadataRaw) > 0 {
+			if err := json.Unmarshal(metadataRaw, &apiKey.Metadata); err != nil {
+				return nil, fmt.Errorf("unmarshal api key metadata: %w", err)
+			}
+		}
+		if len(allowedModelsRaw) > 0 && string(allowedModelsRaw) != "null" {
+			if err := json.Unmarshal(allowedModelsRaw, &apiKey.AllowedModels); err != nil {
+				return nil, fmt.Errorf("unmarshal api key allowed_models: %w", err)
+			}
+		}
 		state.APIKeys[apiKey.KeyHash] = apiKey
+		state.APIKeysByID[apiKey.ID] = apiKey
 	}
 	if err := apiKeys.Err(); err != nil {
 		return nil, fmt.Errorf("iterate api keys: %w", err)

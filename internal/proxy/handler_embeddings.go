@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -75,6 +76,14 @@ func (h *EmbeddingsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error(), "invalid_request_error")
 			return
 		}
+	}
+	if err := enforceAllowedModel(r.Context(), h.stateCache, req.Model); err != nil {
+		if errors.Is(err, errModelNotAllowed) {
+			writeError(w, http.StatusForbidden, err.Error(), "permission_error")
+			return
+		}
+		writeError(w, http.StatusServiceUnavailable, "authorization state unavailable", "server_error")
+		return
 	}
 
 	ep, ok := provider.(llm.EmbeddingProvider)

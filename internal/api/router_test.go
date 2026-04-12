@@ -2,6 +2,8 @@ package api_test
 
 import (
 	"bufio"
+	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,9 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/ed007183/llmgopher/internal/api"
 	"github.com/ed007183/llmgopher/internal/mocks"
+	"github.com/ed007183/llmgopher/internal/storage"
 	"github.com/ed007183/llmgopher/pkg/llm"
+	"github.com/google/uuid"
 )
 
 var discardLogger = slog.New(slog.NewTextHandler(
@@ -50,6 +55,54 @@ func authedRequest(method, path, body string) *http.Request {
 	req.Header.Set("Authorization", "Bearer sk-test")
 	req.Header.Set("Content-Type", "application/json")
 	return req
+}
+
+func buildRouterStateCache(t *testing.T, rawKey string, allowedModels []string) *storage.StateCache {
+	t.Helper()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	now := time.Now().UTC()
+	providerID := uuid.New().String()
+	keyHash := fmt.Sprintf("%x", sha256.Sum256([]byte(rawKey)))
+	allowedModelsJSON, err := json.Marshal(allowedModels)
+	if err != nil {
+		t.Fatalf("marshal allowed models: %v", err)
+	}
+
+	mock.ExpectQuery("SELECT id, name, base_url, auth_type, has_credentials, created_at, updated_at\\s+FROM providers").
+		WillReturnRows(
+			sqlmock.NewRows([]string{"id", "name", "base_url", "auth_type", "has_credentials", "created_at", "updated_at"}).
+				AddRow(providerID, "test-provider", "https://example.com", "bearer", false, now, now),
+		)
+	mock.ExpectQuery("SELECT id, provider_id, name, alias, context_window, created_at, updated_at\\s+FROM models").
+		WillReturnRows(
+			sqlmock.NewRows([]string{"id", "provider_id", "name", "alias", "context_window", "created_at", "updated_at"}).
+				AddRow(uuid.NewString(), providerID, "gpt-4o", "gpt-4o", 128000, now, now),
+		)
+	mock.ExpectQuery("SELECT id, key_hash, name, rate_limit_rps, is_active, expires_at, metadata, to_json\\(allowed_models\\), created_at, updated_at\\s+FROM api_keys\\s+WHERE is_active = TRUE").
+		WillReturnRows(
+			sqlmock.NewRows([]string{"id", "key_hash", "name", "rate_limit_rps", "is_active", "expires_at", "metadata", "allowed_models", "created_at", "updated_at"}).
+				AddRow("key-001", keyHash, "router-key", 100, true, nil, []byte(`{}`), allowedModelsJSON, now, now),
+		)
+
+	cache := storage.NewStateCache(discardLogger)
+	ctx, cancel := context.WithCancel(context.Background())
+	cache.StartPoller(ctx, db, time.Hour)
+	cancel()
+
+	if cache.Load() == nil {
+		t.Fatal("cache state is nil")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+
+	return cache
 }
 
 func waitForAuditEntries(audit *mocks.MockAuditLogger, minCount int) []*llm.AuditEntry {
@@ -219,6 +272,36 @@ func TestChatCompletions_UnknownModel_Returns400(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestChatCompletions_ModelAllowlistViolation_Returns403(t *testing.T) {
+	provider := &mocks.MockProvider{
+		ProviderName: "test-provider",
+		ChatResponse: &llm.ChatCompletionResponse{
+			ID:      "chatcmpl-allowlist",
+			Object:  "chat.completion",
+			Created: time.Now().Unix(),
+			Model:   "gpt-4o",
+			Choices: []llm.Choice{{Index: 0, Message: &llm.Message{Role: "assistant", Content: llm.StringContent("blocked")}}},
+		},
+	}
+
+	deps, _ := newTestDeps(provider)
+	deps.StateCache = buildRouterStateCache(t, "sk-test", []string{"claude-3-5-sonnet"})
+	handler := api.NewRouter(deps)
+
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	req := authedRequest(http.MethodPost, "/v1/chat/completions", body)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	if len(provider.SyncCalls) != 0 {
+		t.Fatalf("provider should not be called when model is disallowed, got %d calls", len(provider.SyncCalls))
 	}
 }
 

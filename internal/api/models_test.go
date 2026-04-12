@@ -161,8 +161,8 @@ func buildModelStateCache(t *testing.T) *storage.StateCache {
 				AddRow(uuid.NewString(), providerID, "gpt-4o", "alpha-model", 128000, createdAlpha, createdAlpha),
 		)
 
-	mock.ExpectQuery("SELECT id, key_hash, name, rate_limit_rps, is_active, created_at, updated_at\\s+FROM api_keys\\s+WHERE is_active = TRUE").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "key_hash", "name", "rate_limit_rps", "is_active", "created_at", "updated_at"}))
+	mock.ExpectQuery("SELECT id, key_hash, name, rate_limit_rps, is_active, expires_at, metadata, to_json\\(allowed_models\\), created_at, updated_at\\s+FROM api_keys\\s+WHERE is_active = TRUE").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "key_hash", "name", "rate_limit_rps", "is_active", "expires_at", "metadata", "allowed_models", "created_at", "updated_at"}))
 
 	cache := storage.NewStateCache(discardLogger)
 	ctx, cancel := context.WithCancel(context.Background())
