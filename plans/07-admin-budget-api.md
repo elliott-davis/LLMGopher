@@ -1,7 +1,7 @@
 # Spec 07: Budget Management API
 
 ## Status
-pending
+completed
 
 ## Goal
 Expose CRUD endpoints for managing per-key budgets. Currently `api_key_budgets` is written to by the cost worker but has no read or write API — operators cannot view or set budgets without direct database access.
@@ -76,14 +76,14 @@ Add all four routes to `internal/api/router.go` under the existing admin middlew
 - Per-model or per-team budgets (spec 23)
 
 ## Acceptance Criteria
-- [ ] `GET /v1/admin/keys/{id}/budget` returns budget state for an existing key
-- [ ] `GET` returns 404 when no budget is set
-- [ ] `PUT /v1/admin/keys/{id}/budget` creates a budget on first call
-- [ ] `PUT` updates `budget_usd` without touching `spent_usd`
-- [ ] `DELETE /v1/admin/keys/{id}/budget` removes the budget row
-- [ ] `POST /v1/admin/keys/{id}/budget/reset` sets `spent_usd` to 0
-- [ ] `remaining_usd` = `budget_usd` - `spent_usd` is computed correctly in all responses
-- [ ] `budget_usd` <= 0 returns 400
+- [x] `GET /v1/admin/keys/{id}/budget` returns budget state for an existing key
+- [x] `GET` returns 404 when no budget is set
+- [x] `PUT /v1/admin/keys/{id}/budget` creates a budget on first call
+- [x] `PUT` updates `budget_usd` without touching `spent_usd`
+- [x] `DELETE /v1/admin/keys/{id}/budget` removes the budget row
+- [x] `POST /v1/admin/keys/{id}/budget/reset` sets `spent_usd` to 0
+- [x] `remaining_usd` = `budget_usd` - `spent_usd` is computed correctly in all responses
+- [x] `budget_usd` <= 0 returns 400
 
 ## Key Files
 - `internal/storage/budget_tracker.go` — add storage functions

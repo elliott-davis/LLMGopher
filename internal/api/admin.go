@@ -287,6 +287,18 @@ type updateAPIKeyRequest struct {
 	IsActive      *bool             `json:"is_active,omitempty"`
 }
 
+type upsertBudgetRequest struct {
+	BudgetUSD float64 `json:"budget_usd"`
+}
+
+type budgetResponse struct {
+	APIKeyID     string     `json:"api_key_id"`
+	BudgetUSD    float64    `json:"budget_usd"`
+	SpentUSD     float64    `json:"spent_usd"`
+	RemainingUSD float64    `json:"remaining_usd"`
+	ResetAt      *time.Time `json:"reset_at"`
+}
+
 type validateCredentialRequest struct {
 	Provider string `json:"provider"`
 	APIKey   string `json:"apiKey"`
@@ -1189,6 +1201,173 @@ func HandleDeleteAPIKey(db *sql.DB) http.HandlerFunc {
 		}
 
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// HandleGetAPIKeyBudget returns the configured budget state for an API key.
+func HandleGetAPIKeyBudget(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			WriteError(w, http.StatusServiceUnavailable, "database unavailable", "service_unavailable")
+			return
+		}
+
+		id := strings.TrimSpace(r.PathValue("id"))
+		if id == "" {
+			WriteError(w, http.StatusBadRequest, "api key id is required", "invalid_request_error")
+			return
+		}
+		if _, err := uuid.Parse(id); err != nil {
+			WriteError(w, http.StatusBadRequest, "api key id must be a valid UUID", "invalid_request_error")
+			return
+		}
+
+		state, err := storage.GetBudget(r.Context(), db, id)
+		if err != nil {
+			status := http.StatusInternalServerError
+			msg := "failed to fetch api key budget"
+			if errors.Is(err, sql.ErrConnDone) {
+				status = http.StatusServiceUnavailable
+				msg = "database unavailable"
+			}
+			WriteError(w, status, msg, "invalid_request_error")
+			return
+		}
+		if state == nil {
+			WriteError(w, http.StatusNotFound, "api key budget not found", "invalid_request_error")
+			return
+		}
+
+		WriteJSON(w, http.StatusOK, toBudgetResponse(state))
+	}
+}
+
+// HandlePutAPIKeyBudget upserts the budget limit for an API key.
+func HandlePutAPIKeyBudget(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			WriteError(w, http.StatusServiceUnavailable, "database unavailable", "service_unavailable")
+			return
+		}
+
+		id := strings.TrimSpace(r.PathValue("id"))
+		if id == "" {
+			WriteError(w, http.StatusBadRequest, "api key id is required", "invalid_request_error")
+			return
+		}
+		if _, err := uuid.Parse(id); err != nil {
+			WriteError(w, http.StatusBadRequest, "api key id must be a valid UUID", "invalid_request_error")
+			return
+		}
+
+		var payload upsertBudgetRequest
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			WriteError(w, http.StatusBadRequest, "invalid JSON body", "invalid_request_error")
+			return
+		}
+		if payload.BudgetUSD <= 0 {
+			WriteError(w, http.StatusBadRequest, "budget_usd must be greater than 0", "invalid_request_error")
+			return
+		}
+
+		state, err := storage.UpsertBudget(r.Context(), db, id, payload.BudgetUSD)
+		if err != nil {
+			status := http.StatusInternalServerError
+			msg := "failed to upsert api key budget"
+			if errors.Is(err, sql.ErrConnDone) {
+				status = http.StatusServiceUnavailable
+				msg = "database unavailable"
+			}
+			WriteError(w, status, msg, "invalid_request_error")
+			return
+		}
+
+		WriteJSON(w, http.StatusOK, toBudgetResponse(state))
+	}
+}
+
+// HandleDeleteAPIKeyBudget removes a configured budget for an API key.
+func HandleDeleteAPIKeyBudget(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			WriteError(w, http.StatusServiceUnavailable, "database unavailable", "service_unavailable")
+			return
+		}
+
+		id := strings.TrimSpace(r.PathValue("id"))
+		if id == "" {
+			WriteError(w, http.StatusBadRequest, "api key id is required", "invalid_request_error")
+			return
+		}
+		if _, err := uuid.Parse(id); err != nil {
+			WriteError(w, http.StatusBadRequest, "api key id must be a valid UUID", "invalid_request_error")
+			return
+		}
+
+		if err := storage.DeleteBudget(r.Context(), db, id); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				WriteError(w, http.StatusNotFound, "api key budget not found", "invalid_request_error")
+				return
+			}
+			status := http.StatusInternalServerError
+			msg := "failed to delete api key budget"
+			if errors.Is(err, sql.ErrConnDone) {
+				status = http.StatusServiceUnavailable
+				msg = "database unavailable"
+			}
+			WriteError(w, status, msg, "invalid_request_error")
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// HandleResetAPIKeyBudget resets an API key's spend to zero.
+func HandleResetAPIKeyBudget(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			WriteError(w, http.StatusServiceUnavailable, "database unavailable", "service_unavailable")
+			return
+		}
+
+		id := strings.TrimSpace(r.PathValue("id"))
+		if id == "" {
+			WriteError(w, http.StatusBadRequest, "api key id is required", "invalid_request_error")
+			return
+		}
+		if _, err := uuid.Parse(id); err != nil {
+			WriteError(w, http.StatusBadRequest, "api key id must be a valid UUID", "invalid_request_error")
+			return
+		}
+
+		state, err := storage.ResetBudget(r.Context(), db, id)
+		if err != nil {
+			status := http.StatusInternalServerError
+			msg := "failed to reset api key budget"
+			if errors.Is(err, sql.ErrConnDone) {
+				status = http.StatusServiceUnavailable
+				msg = "database unavailable"
+			}
+			WriteError(w, status, msg, "invalid_request_error")
+			return
+		}
+		if state == nil {
+			WriteError(w, http.StatusNotFound, "api key budget not found", "invalid_request_error")
+			return
+		}
+
+		WriteJSON(w, http.StatusOK, toBudgetResponse(state))
+	}
+}
+
+func toBudgetResponse(state *storage.BudgetState) budgetResponse {
+	return budgetResponse{
+		APIKeyID:     state.APIKeyID,
+		BudgetUSD:    state.BudgetUSD,
+		SpentUSD:     state.SpentUSD,
+		RemainingUSD: state.BudgetUSD - state.SpentUSD,
+		ResetAt:      state.ResetAt,
 	}
 }
 

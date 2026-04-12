@@ -567,6 +567,20 @@ func TestAdminAudit_NoAuth_Returns401(t *testing.T) {
 	}
 }
 
+func TestAdminBudget_NoAuth_Returns401(t *testing.T) {
+	deps, _ := newTestDeps(nil)
+	handler := api.NewRouter(deps)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/keys/11111111-1111-1111-1111-111111111111/budget", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestChatCompletions_RateLimited_Returns429(t *testing.T) {
 	provider := &mocks.MockProvider{ProviderName: "test"}
 	deps, _ := newTestDeps(provider)

@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -669,6 +670,256 @@ func TestHandleDeleteAPIKey_Success(t *testing.T) {
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusNoContent)
 	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestHandleGetAPIKeyBudget_Success(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleGetAPIKeyBudget(db)
+	keyID := "66666666-6666-6666-6666-666666666666"
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT api_key_id, budget_usd, spent_usd FROM api_key_budgets WHERE api_key_id = $1`)).
+		WithArgs(keyID).
+		WillReturnRows(sqlmock.NewRows([]string{"api_key_id", "budget_usd", "spent_usd"}).AddRow(
+			keyID, 100.0, 23.45,
+		))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/keys/"+keyID+"/budget", nil)
+	req.SetPathValue("id", keyID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload["api_key_id"] != keyID {
+		t.Fatalf("api_key_id = %v, want %s", payload["api_key_id"], keyID)
+	}
+	if payload["budget_usd"] != float64(100) {
+		t.Fatalf("budget_usd = %v, want 100", payload["budget_usd"])
+	}
+	if payload["spent_usd"] != 23.45 {
+		t.Fatalf("spent_usd = %v, want 23.45", payload["spent_usd"])
+	}
+	if payload["remaining_usd"] != 76.55 {
+		t.Fatalf("remaining_usd = %v, want 76.55", payload["remaining_usd"])
+	}
+	if payload["reset_at"] != nil {
+		t.Fatalf("reset_at = %v, want nil", payload["reset_at"])
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestHandleGetAPIKeyBudget_NotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleGetAPIKeyBudget(db)
+	keyID := "66666666-6666-6666-6666-666666666666"
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT api_key_id, budget_usd, spent_usd FROM api_key_budgets WHERE api_key_id = $1`)).
+		WithArgs(keyID).
+		WillReturnError(sql.ErrNoRows)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/keys/"+keyID+"/budget", nil)
+	req.SetPathValue("id", keyID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestHandlePutAPIKeyBudget_InvalidBudget_ReturnsBadRequest(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandlePutAPIKeyBudget(db)
+	keyID := "66666666-6666-6666-6666-666666666666"
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/admin/keys/"+keyID+"/budget",
+		bytes.NewBufferString(`{"budget_usd":0}`),
+	)
+	req.SetPathValue("id", keyID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandlePutAPIKeyBudget_Success(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandlePutAPIKeyBudget(db)
+	keyID := "66666666-6666-6666-6666-666666666666"
+
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO api_key_budgets (api_key_id, budget_usd, spent_usd, created_at, updated_at)
+		 VALUES ($1, $2, 0, NOW(), NOW())
+		 ON CONFLICT (api_key_id) DO UPDATE
+		 SET budget_usd = EXCLUDED.budget_usd, updated_at = NOW()
+		 RETURNING api_key_id, budget_usd, spent_usd`)).
+		WithArgs(keyID, 250.0).
+		WillReturnRows(sqlmock.NewRows([]string{"api_key_id", "budget_usd", "spent_usd"}).AddRow(
+			keyID, 250.0, 120.5,
+		))
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/admin/keys/"+keyID+"/budget",
+		bytes.NewBufferString(`{"budget_usd":250}`),
+	)
+	req.SetPathValue("id", keyID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload["budget_usd"] != float64(250) {
+		t.Fatalf("budget_usd = %v, want 250", payload["budget_usd"])
+	}
+	if payload["spent_usd"] != 120.5 {
+		t.Fatalf("spent_usd = %v, want 120.5", payload["spent_usd"])
+	}
+	if payload["remaining_usd"] != 129.5 {
+		t.Fatalf("remaining_usd = %v, want 129.5", payload["remaining_usd"])
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestHandleDeleteAPIKeyBudget_Success(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleDeleteAPIKeyBudget(db)
+	keyID := "66666666-6666-6666-6666-666666666666"
+
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM api_key_budgets WHERE api_key_id = $1`)).
+		WithArgs(keyID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	req := httptest.NewRequest(http.MethodDelete, "/v1/admin/keys/"+keyID+"/budget", nil)
+	req.SetPathValue("id", keyID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusNoContent)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestHandleDeleteAPIKeyBudget_NotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleDeleteAPIKeyBudget(db)
+	keyID := "66666666-6666-6666-6666-666666666666"
+
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM api_key_budgets WHERE api_key_id = $1`)).
+		WithArgs(keyID).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	req := httptest.NewRequest(http.MethodDelete, "/v1/admin/keys/"+keyID+"/budget", nil)
+	req.SetPathValue("id", keyID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestHandleResetAPIKeyBudget_SetsSpentToZero(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleResetAPIKeyBudget(db)
+	keyID := "66666666-6666-6666-6666-666666666666"
+
+	mock.ExpectQuery(regexp.QuoteMeta(`UPDATE api_key_budgets
+		 SET spent_usd = 0, updated_at = NOW()
+		 WHERE api_key_id = $1
+		 RETURNING api_key_id, budget_usd, spent_usd`)).
+		WithArgs(keyID).
+		WillReturnRows(sqlmock.NewRows([]string{"api_key_id", "budget_usd", "spent_usd"}).AddRow(
+			keyID, 250.0, 0.0,
+		))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/admin/keys/"+keyID+"/budget/reset", nil)
+	req.SetPathValue("id", keyID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload["spent_usd"] != float64(0) || payload["remaining_usd"] != float64(250) {
+		t.Fatalf("payload = %+v, want spent_usd=0 remaining_usd=250", payload)
+	}
+
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet SQL expectations: %v", err)
 	}
