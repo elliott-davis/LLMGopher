@@ -79,10 +79,10 @@ func buildRouterStateCache(t *testing.T, rawKey string, allowedModels []string) 
 			sqlmock.NewRows([]string{"id", "name", "base_url", "auth_type", "has_credentials", "created_at", "updated_at"}).
 				AddRow(providerID, "test-provider", "https://example.com", "bearer", false, now, now),
 		)
-	mock.ExpectQuery("SELECT id, provider_id, name, alias, context_window, created_at, updated_at\\s+FROM models").
+	mock.ExpectQuery("SELECT id, provider_id, name, alias, context_window, rate_limit_rps, created_at, updated_at\\s+FROM models").
 		WillReturnRows(
-			sqlmock.NewRows([]string{"id", "provider_id", "name", "alias", "context_window", "created_at", "updated_at"}).
-				AddRow(uuid.NewString(), providerID, "gpt-4o", "gpt-4o", 128000, now, now),
+			sqlmock.NewRows([]string{"id", "provider_id", "name", "alias", "context_window", "rate_limit_rps", "created_at", "updated_at"}).
+				AddRow(uuid.NewString(), providerID, "gpt-4o", "gpt-4o", 128000, 0, now, now),
 		)
 	mock.ExpectQuery("SELECT id, key_hash, name, rate_limit_rps, is_active, expires_at, metadata, to_json\\(allowed_models\\), created_at, updated_at\\s+FROM api_keys\\s+WHERE is_active = TRUE").
 		WillReturnRows(

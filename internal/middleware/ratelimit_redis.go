@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -12,17 +13,21 @@ import (
 // RedisRateLimiter implements a token bucket rate limiter backed by Redis.
 // Uses a Lua script for atomic check-and-decrement to avoid race conditions.
 type RedisRateLimiter struct {
-	client *redis.Client
-	rps    int
-	burst  int
-	logger *slog.Logger
+	client       *redis.Client
+	defaultLimit bucketLimit
+	mu           sync.RWMutex
+	limits       map[string]bucketLimit
+	logger       *slog.Logger
 }
 
 func NewRedisRateLimiter(client *redis.Client, rps, burst int, logger *slog.Logger) *RedisRateLimiter {
 	return &RedisRateLimiter{
 		client: client,
-		rps:    rps,
-		burst:  burst,
+		defaultLimit: bucketLimit{
+			rps:   float64(rps),
+			burst: float64(burst),
+		},
+		limits: make(map[string]bucketLimit),
 		logger: logger,
 	}
 }
@@ -65,11 +70,16 @@ end
 `)
 
 func (rl *RedisRateLimiter) Allow(ctx context.Context, key string) (bool, error) {
+	limit := rl.limitForKey(key)
+	if limit.rps <= 0 || limit.burst <= 0 {
+		return true, nil
+	}
+
 	bucketKey := fmt.Sprintf("rl:%s", key)
 	nowMicro := time.Now().UnixMicro()
 
 	result, err := tokenBucketScript.Run(ctx, rl.client, []string{bucketKey},
-		rl.burst, rl.rps, nowMicro,
+		limit.burst, limit.rps, nowMicro,
 	).Int()
 
 	if err != nil {
@@ -77,4 +87,25 @@ func (rl *RedisRateLimiter) Allow(ctx context.Context, key string) (bool, error)
 	}
 
 	return result == 1, nil
+}
+
+func (rl *RedisRateLimiter) SetLimit(key string, rps int) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if rps <= 0 {
+		delete(rl.limits, key)
+		return
+	}
+	rl.limits[key] = bucketLimit{rps: float64(rps), burst: float64(rps)}
+}
+
+func (rl *RedisRateLimiter) limitForKey(key string) bucketLimit {
+	rl.mu.RLock()
+	defer rl.mu.RUnlock()
+
+	if limit, ok := rl.limits[key]; ok {
+		return limit
+	}
+	return rl.defaultLimit
 }

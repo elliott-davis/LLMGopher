@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,16 +24,18 @@ import (
 // the call, intercepts the response for token counting, and triggers
 // asynchronous cost tracking + audit logging.
 type Handler struct {
-	registry   llm.ProviderRegistry
-	stateCache *storage.StateCache
-	costWorker *CostWorker
-	tokenCount *TokenCounter
-	logger     *slog.Logger
+	registry    llm.ProviderRegistry
+	stateCache  *storage.StateCache
+	rateLimiter llm.RateLimiter
+	costWorker  *CostWorker
+	tokenCount  *TokenCounter
+	logger      *slog.Logger
 }
 
 func NewHandler(
 	registry llm.ProviderRegistry,
 	stateCache *storage.StateCache,
+	rateLimiter llm.RateLimiter,
 	auditLogger llm.AuditLogger,
 	budgetTracker llm.BudgetTracker,
 	pricing llm.PricingLookup,
@@ -40,11 +43,12 @@ func NewHandler(
 ) *Handler {
 	tc := NewTokenCounter(logger)
 	return &Handler{
-		registry:   registry,
-		stateCache: stateCache,
-		costWorker: NewCostWorker(auditLogger, budgetTracker, pricing, tc, logger),
-		tokenCount: tc,
-		logger:     logger,
+		registry:    registry,
+		stateCache:  stateCache,
+		rateLimiter: rateLimiter,
+		costWorker:  NewCostWorker(auditLogger, budgetTracker, pricing, tc, logger),
+		tokenCount:  tc,
+		logger:      logger,
 	}
 }
 
@@ -64,12 +68,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resolvedModel, expectedProviderName, err := h.resolveModel(req.Model)
+	modelCfg, expectedProviderName, err := h.resolveModel(req.Model)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error(), "invalid_request_error")
 		return
 	}
-	req.Model = resolvedModel
+	req.Model = modelCfg.Name
+
+	if err := h.checkModelRateLimit(r.Context(), modelCfg); err != nil {
+		if errors.Is(err, errModelRateLimitExceeded) {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusTooManyRequests, "model rate limit exceeded", "rate_limit_error")
+			return
+		}
+		h.logger.Warn("model rate limiter error, failing open",
+			"error", err,
+			"request_id", middleware.GetRequestID(r.Context()),
+			"model", req.Model,
+		)
+	}
 
 	var provider llm.Provider
 	if expectedProviderName != "" {
@@ -123,33 +140,62 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) resolveModel(requestedModel string) (resolvedModel string, expectedProviderName string, err error) {
+func (h *Handler) resolveModel(requestedModel string) (modelCfg *llm.Model, expectedProviderName string, err error) {
 	if h.stateCache == nil {
-		return requestedModel, "", nil
+		return &llm.Model{
+			Name:  requestedModel,
+			Alias: requestedModel,
+		}, "", nil
 	}
 
 	state := h.stateCache.Load()
 	if state == nil {
-		return "", "", fmt.Errorf("routing state is not loaded yet")
+		return nil, "", fmt.Errorf("routing state is not loaded yet")
 	}
 
 	modelCfg, ok := resolveConfiguredModel(state, requestedModel)
 	log.Printf("chat routing model lookup: requested_model=%q matched_in_state_cache=%t", requestedModel, ok)
 	if !ok {
-		return "", "", fmt.Errorf("model %q is not configured in state cache", requestedModel)
+		return nil, "", fmt.Errorf("model %q is not configured in state cache", requestedModel)
 	}
 
 	providerID, parseErr := uuid.Parse(modelCfg.ProviderID)
 	if parseErr != nil {
-		return "", "", fmt.Errorf("invalid provider_id in model config")
+		return nil, "", fmt.Errorf("invalid provider_id in model config")
 	}
 
 	providerCfg, ok := state.Providers[providerID]
 	if !ok {
-		return "", "", fmt.Errorf("no provider configured for model alias %q", requestedModel)
+		return nil, "", fmt.Errorf("no provider configured for model alias %q", requestedModel)
 	}
 
-	return modelCfg.Name, preferredProviderRegistryName(providerCfg, requestedModel), nil
+	return modelCfg, preferredProviderRegistryName(providerCfg, requestedModel), nil
+}
+
+var errModelRateLimitExceeded = errors.New("model rate limit exceeded")
+
+func (h *Handler) checkModelRateLimit(ctx context.Context, modelCfg *llm.Model) error {
+	if h.rateLimiter == nil || modelCfg == nil || modelCfg.RateLimitRPS <= 0 {
+		return nil
+	}
+
+	key := "model:" + modelCfg.Alias
+	if modelCfg.Alias == "" {
+		key = "model:" + modelCfg.Name
+	}
+
+	if configurable, ok := h.rateLimiter.(llm.ConfigurableRateLimiter); ok {
+		configurable.SetLimit(key, modelCfg.RateLimitRPS)
+	}
+
+	allowed, err := h.rateLimiter.Allow(ctx, key)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return errModelRateLimitExceeded
+	}
+	return nil
 }
 
 func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request, provider llm.Provider, req *llm.ChatCompletionRequest, meta *RequestMeta) {

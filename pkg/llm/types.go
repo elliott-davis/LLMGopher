@@ -322,6 +322,7 @@ type ModelConfig struct {
 	Name          string    `json:"name"`
 	Alias         string    `json:"alias"`
 	ContextWindow int       `json:"context_window"`
+	RateLimitRPS  int       `json:"rate_limit_rps"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }

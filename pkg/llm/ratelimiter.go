@@ -11,3 +11,10 @@ type RateLimiter interface {
 	// callers should fail-open on error.
 	Allow(ctx context.Context, key string) (bool, error)
 }
+
+// ConfigurableRateLimiter extends RateLimiter with per-key limit overrides.
+// Implementations may ignore overrides for keys not explicitly configured.
+type ConfigurableRateLimiter interface {
+	RateLimiter
+	SetLimit(key string, rps int)
+}

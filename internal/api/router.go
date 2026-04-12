@@ -58,7 +58,7 @@ func NewRouter(deps *Dependencies) http.Handler {
 	mux.HandleFunc("PUT /v1/admin/models/{id}", HandleUpdateModel(deps.DB))
 	mux.HandleFunc("DELETE /v1/admin/models/{id}", HandleDeleteModel(deps.DB))
 
-	chatHandler := proxy.NewHandler(deps.Registry, deps.StateCache, deps.AuditLogger, deps.BudgetTracker, deps.Pricing, deps.Logger)
+	chatHandler := proxy.NewHandler(deps.Registry, deps.StateCache, deps.RateLimiter, deps.AuditLogger, deps.BudgetTracker, deps.Pricing, deps.Logger)
 	embeddingsHandler := proxy.NewEmbeddingsHandler(deps.Registry, deps.Logger, deps.StateCache)
 	completionsHandler := http.HandlerFunc(chatHandler.ServeCompletionsHTTP)
 

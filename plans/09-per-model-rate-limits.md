@@ -1,7 +1,7 @@
 # Spec 09: Per-Model Rate Limits
 
 ## Status
-pending
+completed
 
 ## Goal
 Allow individual models to have their own rate limits independent of the per-key limit. This enables operators to protect expensive models (e.g., GPT-4o) from overuse while allowing looser limits on cheaper models.
@@ -60,12 +60,12 @@ When a model rate limit is hit, return:
 - Metrics for model rate limit hits (covered in spec 20)
 
 ## Acceptance Criteria
-- [ ] A model with `rate_limit_rps: 2` rejects a third request within the same second with 429
-- [ ] A model with `rate_limit_rps: 0` has no model-level rate limit
-- [ ] Model and key rate limits are independently enforced (hitting model limit doesn't affect key limit bucket)
-- [ ] `Retry-After` header is present on 429 responses
-- [ ] State cache change to `rate_limit_rps` takes effect within the cache poll interval (5s) without restart
-- [ ] Unit test covers model rate limit enforcement in the handler
+- [x] A model with `rate_limit_rps: 2` rejects a third request within the same second with 429
+- [x] A model with `rate_limit_rps: 0` has no model-level rate limit
+- [x] Model and key rate limits are independently enforced (hitting model limit doesn't affect key limit bucket)
+- [x] `Retry-After` header is present on 429 responses
+- [x] State cache change to `rate_limit_rps` takes effect within the cache poll interval (5s) without restart
+- [x] Unit test covers model rate limit enforcement in the handler
 
 ## Key Files
 - `internal/proxy/handler.go` — add `checkModelRateLimit` call after model resolution

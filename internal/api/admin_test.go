@@ -446,6 +446,85 @@ func TestHandleCreateModel_NilDB_ReturnsServiceUnavailable(t *testing.T) {
 	}
 }
 
+func TestHandleCreateModel_SuccessWithRateLimit(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleCreateModel(db)
+	providerID := "99999999-9999-9999-9999-999999999999"
+
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO models (id, alias, name, provider_id, context_window, rate_limit_rps, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`)).
+		WithArgs(
+			sqlmock.AnyArg(),
+			"gpt-4o",
+			"gpt-4o",
+			providerID,
+			128000,
+			25,
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/admin/models",
+		bytes.NewBufferString(`{"alias":"gpt-4o","name":"gpt-4o","provider_id":"99999999-9999-9999-9999-999999999999","context_window":128000,"rate_limit_rps":25}`),
+	)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", w.Code, http.StatusCreated, w.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestHandleUpdateModel_SuccessWithRateLimit(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleUpdateModel(db)
+	modelID := "88888888-8888-8888-8888-888888888888"
+	providerID := "77777777-7777-7777-7777-777777777777"
+
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE models SET alias = $1, name = $2, provider_id = $3, context_window = $4, rate_limit_rps = $5, updated_at = $6 WHERE id = $7`)).
+		WithArgs(
+			"gpt-4.1",
+			"gpt-4.1",
+			providerID,
+			128000,
+			10,
+			sqlmock.AnyArg(),
+			modelID,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/admin/models/"+modelID,
+		bytes.NewBufferString(`{"alias":"gpt-4.1","name":"gpt-4.1","provider_id":"77777777-7777-7777-7777-777777777777","context_window":128000,"rate_limit_rps":10}`),
+	)
+	req.SetPathValue("id", modelID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
 func TestHandleCreateProvider_NilDB_ReturnsServiceUnavailable(t *testing.T) {
 	handler := api.HandleCreateProvider(nil, nil)
 

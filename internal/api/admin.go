@@ -230,6 +230,7 @@ type createModelRequest struct {
 	Name          string `json:"name"`
 	ProviderID    string `json:"provider_id"`
 	ContextWindow int    `json:"context_window"`
+	RateLimitRPS  int    `json:"rate_limit_rps"`
 }
 
 type createProviderRequest struct {
@@ -410,8 +411,9 @@ func HandleCreateModel(db *sql.DB) http.HandlerFunc {
 		if strings.TrimSpace(payload.Alias) == "" ||
 			strings.TrimSpace(payload.Name) == "" ||
 			strings.TrimSpace(payload.ProviderID) == "" ||
-			payload.ContextWindow <= 0 {
-			WriteError(w, http.StatusBadRequest, "alias, name, provider_id, and positive context_window are required", "invalid_request_error")
+			payload.ContextWindow <= 0 ||
+			payload.RateLimitRPS < 0 {
+			WriteError(w, http.StatusBadRequest, "alias, name, provider_id, positive context_window, and non-negative rate_limit_rps are required", "invalid_request_error")
 			return
 		}
 
@@ -423,12 +425,13 @@ func HandleCreateModel(db *sql.DB) http.HandlerFunc {
 		now := time.Now().UTC()
 		_, err := db.ExecContext(
 			r.Context(),
-			`INSERT INTO models (id, alias, name, provider_id, context_window, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			`INSERT INTO models (id, alias, name, provider_id, context_window, rate_limit_rps, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 			uuid.NewString(),
 			payload.Alias,
 			payload.Name,
 			payload.ProviderID,
 			payload.ContextWindow,
+			payload.RateLimitRPS,
 			now,
 			now,
 		)
@@ -478,8 +481,9 @@ func HandleUpdateModel(db *sql.DB) http.HandlerFunc {
 		if strings.TrimSpace(payload.Alias) == "" ||
 			strings.TrimSpace(payload.Name) == "" ||
 			strings.TrimSpace(payload.ProviderID) == "" ||
-			payload.ContextWindow <= 0 {
-			WriteError(w, http.StatusBadRequest, "alias, name, provider_id, and positive context_window are required", "invalid_request_error")
+			payload.ContextWindow <= 0 ||
+			payload.RateLimitRPS < 0 {
+			WriteError(w, http.StatusBadRequest, "alias, name, provider_id, positive context_window, and non-negative rate_limit_rps are required", "invalid_request_error")
 			return
 		}
 
@@ -490,11 +494,12 @@ func HandleUpdateModel(db *sql.DB) http.HandlerFunc {
 
 		result, err := db.ExecContext(
 			r.Context(),
-			`UPDATE models SET alias = $1, name = $2, provider_id = $3, context_window = $4, updated_at = $5 WHERE id = $6`,
+			`UPDATE models SET alias = $1, name = $2, provider_id = $3, context_window = $4, rate_limit_rps = $5, updated_at = $6 WHERE id = $7`,
 			payload.Alias,
 			payload.Name,
 			payload.ProviderID,
 			payload.ContextWindow,
+			payload.RateLimitRPS,
 			time.Now().UTC(),
 			id,
 		)

@@ -154,11 +154,11 @@ func buildModelStateCache(t *testing.T) *storage.StateCache {
 				AddRow(providerID, "openai", "https://api.openai.com/v1", "bearer", false, createdAlpha, createdAlpha),
 		)
 
-	mock.ExpectQuery("SELECT id, provider_id, name, alias, context_window, created_at, updated_at\\s+FROM models").
+	mock.ExpectQuery("SELECT id, provider_id, name, alias, context_window, rate_limit_rps, created_at, updated_at\\s+FROM models").
 		WillReturnRows(
-			sqlmock.NewRows([]string{"id", "provider_id", "name", "alias", "context_window", "created_at", "updated_at"}).
-				AddRow(uuid.NewString(), providerID, "gpt-4.1", "zeta-model", 128000, createdZeta, createdZeta).
-				AddRow(uuid.NewString(), providerID, "gpt-4o", "alpha-model", 128000, createdAlpha, createdAlpha),
+			sqlmock.NewRows([]string{"id", "provider_id", "name", "alias", "context_window", "rate_limit_rps", "created_at", "updated_at"}).
+				AddRow(uuid.NewString(), providerID, "gpt-4.1", "zeta-model", 128000, 0, createdZeta, createdZeta).
+				AddRow(uuid.NewString(), providerID, "gpt-4o", "alpha-model", 128000, 0, createdAlpha, createdAlpha),
 		)
 
 	mock.ExpectQuery("SELECT id, key_hash, name, rate_limit_rps, is_active, expires_at, metadata, to_json\\(allowed_models\\), created_at, updated_at\\s+FROM api_keys\\s+WHERE is_active = TRUE").

@@ -131,7 +131,7 @@ func (c *StateCache) loadState(ctx context.Context, db *sql.DB) (*GatewayState, 
 	}
 
 	models, err := db.QueryContext(ctx, `
-		SELECT id, provider_id, name, alias, context_window, created_at, updated_at
+		SELECT id, provider_id, name, alias, context_window, rate_limit_rps, created_at, updated_at
 		FROM models
 	`)
 	if err != nil {
@@ -147,6 +147,7 @@ func (c *StateCache) loadState(ctx context.Context, db *sql.DB) (*GatewayState, 
 			&model.Name,
 			&model.Alias,
 			&model.ContextWindow,
+			&model.RateLimitRPS,
 			&model.CreatedAt,
 			&model.UpdatedAt,
 		); err != nil {

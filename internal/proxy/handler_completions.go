@@ -46,12 +46,25 @@ func (h *Handler) ServeCompletionsHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resolvedModel, expectedProviderName, err := h.resolveModel(req.Model)
+	modelCfg, expectedProviderName, err := h.resolveModel(req.Model)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error(), "invalid_request_error")
 		return
 	}
-	req.Model = resolvedModel
+	req.Model = modelCfg.Name
+
+	if err := h.checkModelRateLimit(r.Context(), modelCfg); err != nil {
+		if errors.Is(err, errModelRateLimitExceeded) {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusTooManyRequests, "model rate limit exceeded", "rate_limit_error")
+			return
+		}
+		h.logger.Warn("model rate limiter error, failing open",
+			"error", err,
+			"request_id", middleware.GetRequestID(r.Context()),
+			"model", req.Model,
+		)
+	}
 
 	var provider llm.Provider
 	if expectedProviderName != "" {

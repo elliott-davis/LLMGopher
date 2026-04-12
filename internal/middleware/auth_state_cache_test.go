@@ -99,10 +99,10 @@ func buildAuthStateCache(t *testing.T, key authStateKeyRow) *storage.StateCache 
 			sqlmock.NewRows([]string{"id", "name", "base_url", "auth_type", "has_credentials", "created_at", "updated_at"}).
 				AddRow(providerID, "openai", "https://api.openai.com/v1", "bearer", false, now, now),
 		)
-	mock.ExpectQuery("SELECT id, provider_id, name, alias, context_window, created_at, updated_at\\s+FROM models").
+	mock.ExpectQuery("SELECT id, provider_id, name, alias, context_window, rate_limit_rps, created_at, updated_at\\s+FROM models").
 		WillReturnRows(
-			sqlmock.NewRows([]string{"id", "provider_id", "name", "alias", "context_window", "created_at", "updated_at"}).
-				AddRow(uuid.NewString(), providerID, "gpt-4o", "gpt-4o", 128000, now, now),
+			sqlmock.NewRows([]string{"id", "provider_id", "name", "alias", "context_window", "rate_limit_rps", "created_at", "updated_at"}).
+				AddRow(uuid.NewString(), providerID, "gpt-4o", "gpt-4o", 128000, 0, now, now),
 		)
 	if key.metadata == nil {
 		key.metadata = []byte(`{}`)

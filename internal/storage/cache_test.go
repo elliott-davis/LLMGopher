@@ -51,6 +51,9 @@ func TestStateCacheRefresh_SuccessSwapsState(t *testing.T) {
 	if model.Name != "gpt-4o" {
 		t.Fatalf("resolved model name = %q, want %q", model.Name, "gpt-4o")
 	}
+	if model.RateLimitRPS != 2 {
+		t.Fatalf("model rate_limit_rps = %d, want 2", model.RateLimitRPS)
+	}
 
 	key, ok := state.APIKeys["hash-sk-prod"]
 	if !ok {
@@ -148,10 +151,10 @@ func expectStateQueries(mock sqlmock.Sqlmock, providerID uuid.UUID, now time.Tim
 				AddRow(providerID.String(), "openai", "https://api.openai.com", "bearer", false, now, now),
 		)
 
-	mock.ExpectQuery("SELECT id, provider_id, name, alias, context_window, created_at, updated_at\\s+FROM models").
+	mock.ExpectQuery("SELECT id, provider_id, name, alias, context_window, rate_limit_rps, created_at, updated_at\\s+FROM models").
 		WillReturnRows(
-			sqlmock.NewRows([]string{"id", "provider_id", "name", "alias", "context_window", "created_at", "updated_at"}).
-				AddRow(uuid.NewString(), providerID.String(), "gpt-4o", "production-chat", 128000, now, now),
+			sqlmock.NewRows([]string{"id", "provider_id", "name", "alias", "context_window", "rate_limit_rps", "created_at", "updated_at"}).
+				AddRow(uuid.NewString(), providerID.String(), "gpt-4o", "production-chat", 128000, 2, now, now),
 		)
 
 	mock.ExpectQuery("SELECT id, key_hash, name, rate_limit_rps, is_active, expires_at, metadata, to_json\\(allowed_models\\), created_at, updated_at\\s+FROM api_keys\\s+WHERE is_active = TRUE").
