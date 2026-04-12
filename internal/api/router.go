@@ -36,6 +36,7 @@ func NewRouter(deps *Dependencies) http.Handler {
 
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.HandleFunc("GET /ready", handleReady)
+	mux.Handle("GET /v1/models", applyAuthMiddleware(deps, HandleListModels(deps.StateCache)))
 	mux.HandleFunc("GET /v1/admin/keys", HandleGetKeys(deps.StateCache))
 	mux.HandleFunc("GET /v1/admin/models", HandleGetModels(deps.StateCache))
 	mux.HandleFunc("GET /v1/admin/providers", HandleGetProviders(deps.StateCache))
@@ -50,9 +51,11 @@ func NewRouter(deps *Dependencies) http.Handler {
 
 	chatHandler := proxy.NewHandler(deps.Registry, deps.StateCache, deps.AuditLogger, deps.BudgetTracker, deps.Pricing, deps.Logger)
 	embeddingsHandler := proxy.NewEmbeddingsHandler(deps.Registry, deps.Logger, deps.StateCache)
+	completionsHandler := http.HandlerFunc(chatHandler.ServeCompletionsHTTP)
 
 	// OpenAI-compatible endpoints — protected by the full middleware chain.
 	mux.Handle("POST /v1/chat/completions", applyChatMiddleware(deps, chatHandler))
+	mux.Handle("POST /v1/completions", applyChatMiddleware(deps, completionsHandler))
 	mux.Handle("POST /v1/embeddings", applyChatMiddleware(deps, embeddingsHandler))
 
 	// Wrap the entire mux with top-level middleware (logging, recovery, request ID).
@@ -68,17 +71,28 @@ func NewRouter(deps *Dependencies) http.Handler {
 
 // applyChatMiddleware layers auth, rate limiting, and guardrails onto a handler.
 func applyChatMiddleware(deps *Dependencies, next http.Handler) http.Handler {
+	return middleware.Chain(
+		next,
+		authMiddleware(deps),
+		middleware.RateLimit(deps.RateLimiter, deps.Logger),
+		middleware.GuardrailCheck(deps.Guardrail, deps.Logger),
+	)
+}
+
+func applyAuthMiddleware(deps *Dependencies, next http.Handler) http.Handler {
+	return middleware.Chain(
+		next,
+		authMiddleware(deps),
+	)
+}
+
+func authMiddleware(deps *Dependencies) middleware.Middleware {
 	authMW := middleware.Auth(deps.APIKeys, deps.Logger)
 	if deps.StateCache != nil {
 		authMW = middleware.AuthWithStateCache(deps.StateCache, deps.Logger)
 	}
 
-	return middleware.Chain(
-		next,
-		authMW,
-		middleware.RateLimit(deps.RateLimiter, deps.Logger),
-		middleware.GuardrailCheck(deps.Guardrail, deps.Logger),
-	)
+	return authMW
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {

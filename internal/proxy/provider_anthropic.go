@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -40,34 +41,60 @@ func (p *AnthropicProvider) Name() string { return "anthropic" }
 // --- Anthropic wire types ---
 
 type anthropicRequest struct {
-	Model       string             `json:"model"`
-	Messages    []anthropicMessage `json:"messages"`
-	System      string             `json:"system,omitempty"`
-	MaxTokens   int                `json:"max_tokens"`
-	Temperature *float64           `json:"temperature,omitempty"`
-	TopP        *float64           `json:"top_p,omitempty"`
-	Stream      bool               `json:"stream,omitempty"`
-	StopSeqs    []string           `json:"stop_sequences,omitempty"`
+	Model       string               `json:"model"`
+	Messages    []anthropicMessage   `json:"messages"`
+	System      string               `json:"system,omitempty"`
+	MaxTokens   int                  `json:"max_tokens"`
+	Temperature *float64             `json:"temperature,omitempty"`
+	TopP        *float64             `json:"top_p,omitempty"`
+	Stream      bool                 `json:"stream,omitempty"`
+	StopSeqs    []string             `json:"stop_sequences,omitempty"`
+	Tools       []anthropicTool      `json:"tools,omitempty"`
+	ToolChoice  *anthropicToolChoice `json:"tool_choice,omitempty"`
 }
 
 type anthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+}
+
+type anthropicTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+type anthropicToolChoice struct {
+	Type string `json:"type"`           // "auto" | "any" | "none" | "tool"
+	Name string `json:"name,omitempty"` // only when type="tool"
 }
 
 type anthropicResponse struct {
-	ID         string                   `json:"id"`
-	Type       string                   `json:"type"`
-	Role       string                   `json:"role"`
-	Content    []anthropicContentBlock  `json:"content"`
-	Model      string                   `json:"model"`
-	StopReason string                   `json:"stop_reason"`
-	Usage      anthropicUsage           `json:"usage"`
+	ID         string                  `json:"id"`
+	Type       string                  `json:"type"`
+	Role       string                  `json:"role"`
+	Content    []anthropicContentBlock `json:"content"`
+	Model      string                  `json:"model"`
+	StopReason string                  `json:"stop_reason"`
+	Usage      anthropicUsage          `json:"usage"`
 }
 
 type anthropicContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type      string                `json:"type"`
+	Text      string                `json:"text,omitempty"`
+	Source    *anthropicImageSource `json:"source,omitempty"`
+	ID        string                `json:"id,omitempty"`          // tool_use block id
+	Name      string                `json:"name,omitempty"`        // tool_use function name
+	Input     json.RawMessage       `json:"input,omitempty"`       // tool_use arguments
+	ToolUseID string                `json:"tool_use_id,omitempty"` // tool_result reference
+	Content   json.RawMessage       `json:"content,omitempty"`     // tool_result payload
+}
+
+type anthropicImageSource struct {
+	Type      string `json:"type"`
+	URL       string `json:"url,omitempty"`
+	MediaType string `json:"media_type,omitempty"`
+	Data      string `json:"data,omitempty"`
 }
 
 type anthropicUsage struct {
@@ -89,6 +116,11 @@ type anthropicTextDelta struct {
 	Text string `json:"text"`
 }
 
+type anthropicInputJSONDelta struct {
+	Type        string `json:"type"`
+	PartialJSON string `json:"partial_json"`
+}
+
 type anthropicStreamUsage struct {
 	OutputTokens int `json:"output_tokens"`
 }
@@ -96,6 +128,12 @@ type anthropicStreamUsage struct {
 type anthropicMessageStart struct {
 	Type    string            `json:"type"`
 	Message anthropicResponse `json:"message"`
+}
+
+type anthropicContentBlockStart struct {
+	Type         string                `json:"type"`
+	Index        int                   `json:"index"`
+	ContentBlock anthropicContentBlock `json:"content_block"`
 }
 
 // --- Translation ---
@@ -124,35 +162,242 @@ func (p *AnthropicProvider) toAnthropicRequest(req *llm.ChatCompletionRequest) *
 		ar.StopSeqs = stops
 	}
 
+	// Translate tools.
+	for _, t := range req.Tools {
+		schema := t.Function.Parameters
+		if schema == nil {
+			schema = json.RawMessage(`{}`)
+		}
+		ar.Tools = append(ar.Tools, anthropicTool{
+			Name:        t.Function.Name,
+			Description: t.Function.Description,
+			InputSchema: schema,
+		})
+	}
+
+	// Translate tool_choice.
+	if req.ToolChoice != nil {
+		ar.ToolChoice = parseAnthropicToolChoice(req.ToolChoice)
+	}
+
 	for _, m := range req.Messages {
 		if m.Role == "system" {
-			ar.System = m.Content
+			ar.System = m.ContentString()
 			continue
 		}
-		role := m.Role
-		if role == "assistant" {
-			role = "assistant"
-		} else {
-			role = "user"
+
+		switch m.Role {
+		case "tool":
+			// Tool result → user message with a tool_result content block.
+			payload := m.Content
+			if payload == nil {
+				payload = json.RawMessage(`""`)
+			}
+			block := anthropicContentBlock{
+				Type:      "tool_result",
+				ToolUseID: m.ToolCallID,
+				Content:   payload,
+			}
+			content, _ := json.Marshal([]anthropicContentBlock{block})
+			ar.Messages = append(ar.Messages, anthropicMessage{
+				Role:    "user",
+				Content: content,
+			})
+
+		case "assistant":
+			if len(m.ToolCalls) > 0 {
+				// Mix text and tool_use content blocks.
+				blocks, ok := anthropicBlocksFromMessage(m)
+				if !ok {
+					if cs := m.ContentString(); cs != "" {
+						blocks = append(blocks, anthropicContentBlock{Type: "text", Text: cs})
+					}
+				}
+				for _, tc := range m.ToolCalls {
+					input := json.RawMessage(`{}`)
+					if tc.Function.Arguments != "" {
+						input = json.RawMessage(tc.Function.Arguments)
+					}
+					blocks = append(blocks, anthropicContentBlock{
+						Type:  "tool_use",
+						ID:    tc.ID,
+						Name:  tc.Function.Name,
+						Input: input,
+					})
+				}
+				content, _ := json.Marshal(blocks)
+				ar.Messages = append(ar.Messages, anthropicMessage{
+					Role:    "assistant",
+					Content: content,
+				})
+			} else {
+				content := anthropicMessageContent(m)
+				ar.Messages = append(ar.Messages, anthropicMessage{
+					Role:    "assistant",
+					Content: content,
+				})
+			}
+
+		default: // user
+			content := anthropicMessageContent(m)
+			ar.Messages = append(ar.Messages, anthropicMessage{
+				Role:    "user",
+				Content: content,
+			})
 		}
-		ar.Messages = append(ar.Messages, anthropicMessage{
-			Role:    role,
-			Content: m.Content,
-		})
 	}
 
 	return ar
 }
 
+// parseAnthropicToolChoice converts the OpenAI tool_choice field to Anthropic format.
+func parseAnthropicToolChoice(raw json.RawMessage) *anthropicToolChoice {
+	// String forms: "none", "auto", "required"
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		switch s {
+		case "none":
+			return &anthropicToolChoice{Type: "none"}
+		case "auto":
+			return &anthropicToolChoice{Type: "auto"}
+		case "required":
+			return &anthropicToolChoice{Type: "any"}
+		}
+		return nil
+	}
+
+	// Object form: {"type": "function", "function": {"name": "..."}}
+	var obj struct {
+		Type     string `json:"type"`
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	if err := json.Unmarshal(raw, &obj); err == nil && obj.Type == "function" {
+		return &anthropicToolChoice{Type: "tool", Name: obj.Function.Name}
+	}
+	return nil
+}
+
+func anthropicMessageContent(m llm.Message) json.RawMessage {
+	if blocks, ok := anthropicBlocksFromMessage(m); ok {
+		content, _ := json.Marshal(blocks)
+		return content
+	}
+	content, _ := json.Marshal(m.ContentString())
+	return json.RawMessage(content)
+}
+
+func anthropicBlocksFromMessage(m llm.Message) ([]anthropicContentBlock, bool) {
+	trimmed := bytes.TrimSpace(m.Content)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return nil, false
+	}
+
+	parts, err := m.ContentParts()
+	if err != nil {
+		return nil, false
+	}
+
+	blocks := make([]anthropicContentBlock, 0, len(parts))
+	for _, part := range parts {
+		switch part.Type {
+		case "text":
+			blocks = append(blocks, anthropicContentBlock{
+				Type: "text",
+				Text: part.Text,
+			})
+		case "image_url":
+			if part.ImageURL == nil || part.ImageURL.URL == "" {
+				continue
+			}
+			imageBlock, ok := anthropicImageBlockFromURL(part.ImageURL.URL)
+			if !ok {
+				continue
+			}
+			blocks = append(blocks, imageBlock)
+		}
+	}
+	return blocks, true
+}
+
+func anthropicImageBlockFromURL(rawURL string) (anthropicContentBlock, bool) {
+	if strings.HasPrefix(rawURL, "https://") {
+		return anthropicContentBlock{
+			Type: "image",
+			Source: &anthropicImageSource{
+				Type: "url",
+				URL:  rawURL,
+			},
+		}, true
+	}
+
+	mediaType, data, ok := parseAnthropicImageDataURI(rawURL)
+	if !ok {
+		return anthropicContentBlock{}, false
+	}
+
+	return anthropicContentBlock{
+		Type: "image",
+		Source: &anthropicImageSource{
+			Type:      "base64",
+			MediaType: mediaType,
+			Data:      data,
+		},
+	}, true
+}
+
+func parseAnthropicImageDataURI(uri string) (string, string, bool) {
+	if !strings.HasPrefix(uri, "data:image/") {
+		return "", "", false
+	}
+
+	idx := strings.Index(uri, ";base64,")
+	if idx <= len("data:") {
+		return "", "", false
+	}
+
+	mediaType := uri[len("data:"):idx]
+	data := uri[idx+len(";base64,"):]
+	if mediaType == "" || data == "" {
+		return "", "", false
+	}
+	if _, err := base64.StdEncoding.DecodeString(data); err != nil {
+		return "", "", false
+	}
+	return mediaType, data, true
+}
+
 func (p *AnthropicProvider) fromAnthropicResponse(ar *anthropicResponse, model string) *llm.ChatCompletionResponse {
 	var text string
+	var toolCalls []llm.ToolCall
+
 	for _, block := range ar.Content {
-		if block.Type == "text" {
+		switch block.Type {
+		case "text":
 			text += block.Text
+		case "tool_use":
+			argsJSON, _ := json.Marshal(block.Input)
+			toolCalls = append(toolCalls, llm.ToolCall{
+				ID:   block.ID,
+				Type: "function",
+				Function: llm.FunctionCall{
+					Name:      block.Name,
+					Arguments: string(argsJSON),
+				},
+			})
 		}
 	}
 
 	finishReason := mapAnthropicStopReason(ar.StopReason)
+
+	msg := &llm.Message{
+		Role:    "assistant",
+		Content: llm.StringContent(text),
+	}
+	if len(toolCalls) > 0 {
+		msg.ToolCalls = toolCalls
+	}
 
 	return &llm.ChatCompletionResponse{
 		ID:      "chatcmpl-" + ar.ID,
@@ -161,11 +406,8 @@ func (p *AnthropicProvider) fromAnthropicResponse(ar *anthropicResponse, model s
 		Model:   model,
 		Choices: []llm.Choice{
 			{
-				Index: 0,
-				Message: &llm.Message{
-					Role:    "assistant",
-					Content: text,
-				},
+				Index:        0,
+				Message:      msg,
 				FinishReason: finishReason,
 			},
 		},
@@ -185,6 +427,8 @@ func mapAnthropicStopReason(reason string) string {
 		return "length"
 	case "stop_sequence":
 		return "stop"
+	case "tool_use":
+		return "tool_calls"
 	default:
 		return reason
 	}
@@ -286,12 +530,11 @@ func (p *AnthropicProvider) translateStream(src io.ReadCloser, dst *io.PipeWrite
 			return
 		}
 
-		// Try to detect the event type from the JSON.
+		// Detect event type.
 		var raw map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(data), &raw); err != nil {
 			continue
 		}
-
 		var eventType string
 		if t, ok := raw["type"]; ok {
 			json.Unmarshal(t, &eventType)
@@ -304,16 +547,15 @@ func (p *AnthropicProvider) translateStream(src io.ReadCloser, dst *io.PipeWrite
 				msgID = ms.Message.ID
 			}
 
-		case "content_block_delta":
-			var evt anthropicStreamEvent
-			if err := json.Unmarshal([]byte(data), &evt); err != nil {
+		case "content_block_start":
+			var blockStart anthropicContentBlockStart
+			if err := json.Unmarshal([]byte(data), &blockStart); err != nil {
 				continue
 			}
-			var delta anthropicTextDelta
-			if err := json.Unmarshal(evt.Delta, &delta); err != nil {
+			if blockStart.ContentBlock.Type != "tool_use" {
 				continue
 			}
-
+			// Emit initial tool call chunk with id, type, and function name.
 			chunk := llm.ChatCompletionChunk{
 				ID:      "chatcmpl-" + msgID,
 				Object:  "chat.completion.chunk",
@@ -322,14 +564,92 @@ func (p *AnthropicProvider) translateStream(src io.ReadCloser, dst *io.PipeWrite
 				Choices: []llm.Choice{
 					{
 						Index: 0,
-						Delta: &llm.Message{
-							Content: delta.Text,
+						Delta: &llm.MessageDelta{
+							ToolCalls: []llm.ToolCallDelta{
+								{
+									Index: blockStart.Index,
+									ID:    blockStart.ContentBlock.ID,
+									Type:  "function",
+									Function: llm.FunctionCall{
+										Name: blockStart.ContentBlock.Name,
+									},
+								},
+							},
 						},
 					},
 				},
 			}
 			chunkJSON, _ := json.Marshal(chunk)
 			fmt.Fprintf(dst, "data: %s\n\n", chunkJSON)
+
+		case "content_block_delta":
+			var evt anthropicStreamEvent
+			if err := json.Unmarshal([]byte(data), &evt); err != nil {
+				continue
+			}
+
+			// Determine delta type.
+			var rawDelta map[string]json.RawMessage
+			if err := json.Unmarshal(evt.Delta, &rawDelta); err != nil {
+				continue
+			}
+			var deltaType string
+			if t, ok := rawDelta["type"]; ok {
+				json.Unmarshal(t, &deltaType)
+			}
+
+			switch deltaType {
+			case "text_delta":
+				var delta anthropicTextDelta
+				if err := json.Unmarshal(evt.Delta, &delta); err != nil {
+					continue
+				}
+				chunk := llm.ChatCompletionChunk{
+					ID:      "chatcmpl-" + msgID,
+					Object:  "chat.completion.chunk",
+					Created: created,
+					Model:   model,
+					Choices: []llm.Choice{
+						{
+							Index: 0,
+							Delta: &llm.MessageDelta{
+								Content: llm.StringContent(delta.Text),
+							},
+						},
+					},
+				}
+				chunkJSON, _ := json.Marshal(chunk)
+				fmt.Fprintf(dst, "data: %s\n\n", chunkJSON)
+
+			case "input_json_delta":
+				var toolDelta anthropicInputJSONDelta
+				if err := json.Unmarshal(evt.Delta, &toolDelta); err != nil {
+					continue
+				}
+				chunk := llm.ChatCompletionChunk{
+					ID:      "chatcmpl-" + msgID,
+					Object:  "chat.completion.chunk",
+					Created: created,
+					Model:   model,
+					Choices: []llm.Choice{
+						{
+							Index: 0,
+							Delta: &llm.MessageDelta{
+								ToolCalls: []llm.ToolCallDelta{
+									{
+										Index: evt.Index,
+										Function: llm.FunctionCall{
+											Arguments: toolDelta.PartialJSON,
+										},
+									},
+								},
+							},
+						},
+					},
+				}
+				chunkJSON, _ := json.Marshal(chunk)
+				fmt.Fprintf(dst, "data: %s\n\n", chunkJSON)
+			}
 
 		case "message_delta":
 			var evt anthropicStreamEvent
@@ -353,7 +673,7 @@ func (p *AnthropicProvider) translateStream(src io.ReadCloser, dst *io.PipeWrite
 				Choices: []llm.Choice{
 					{
 						Index:        0,
-						Delta:        &llm.Message{},
+						Delta:        &llm.MessageDelta{},
 						FinishReason: stopReason,
 					},
 				},

@@ -107,8 +107,10 @@ func (si *StreamInterceptor) process() {
 		}
 
 		for _, choice := range chunk.Choices {
-			if choice.Delta != nil && choice.Delta.Content != "" {
-				outputBuf.WriteString(choice.Delta.Content)
+			if choice.Delta != nil {
+				if s := choice.Delta.ContentString(); s != "" {
+					outputBuf.WriteString(s)
+				}
 			}
 			if choice.FinishReason != "" {
 				si.result.FinishReason = choice.FinishReason

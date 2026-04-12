@@ -95,6 +95,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Model:        req.Model,
 		ProviderName: provider.Name(),
 		Messages:     req.Messages,
+		Tools:        req.Tools,
 		Streaming:    req.Stream,
 		StartTime:    time.Now(),
 	}

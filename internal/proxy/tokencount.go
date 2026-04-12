@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"log/slog"
 	"strings"
 	"sync"
@@ -8,6 +9,8 @@ import (
 	"github.com/ed007183/llmgopher/pkg/llm"
 	tiktoken "github.com/pkoukk/tiktoken-go"
 )
+
+const estimatedTokensPerPromptImage = 1000
 
 // TokenCounter estimates token counts for prompts and completions.
 // It caches tiktoken encodings per model family to avoid repeated init cost.
@@ -25,25 +28,39 @@ func NewTokenCounter(logger *slog.Logger) *TokenCounter {
 }
 
 // CountPromptTokens estimates the token count for the prompt messages.
-func (tc *TokenCounter) CountPromptTokens(model string, messages []llm.Message) int {
+// Optional tool definitions are serialized to JSON and appended to the count.
+func (tc *TokenCounter) CountPromptTokens(model string, messages []llm.Message, tools ...llm.Tool) int {
 	enc := tc.getEncoding(model)
 	if enc == nil {
-		return tc.estimateFallback(messages)
+		return tc.estimateFallback(model, messages)
 	}
 
 	// OpenAI's token counting includes per-message overhead.
 	// ~4 tokens per message for role/name framing, +2 for the reply priming.
 	tokensPerMessage := 4
 	total := 0
+	imageCount := 0
 	for _, m := range messages {
 		total += tokensPerMessage
-		total += len(enc.Encode(m.Content, nil, nil))
+		total += len(enc.Encode(m.ContentString(), nil, nil))
 		total += len(enc.Encode(m.Role, nil, nil))
 		if m.Name != "" {
 			total += len(enc.Encode(m.Name, nil, nil))
 		}
+		imageCount += countImagesInMessage(m)
 	}
 	total += 2 // reply priming
+
+	// Include tool definitions as a conservative token estimate.
+	if len(tools) > 0 {
+		toolsJSON, err := json.Marshal(tools)
+		if err == nil {
+			total += len(enc.Encode(string(toolsJSON), nil, nil))
+		}
+	}
+
+	total += tc.estimateImageTokens(model, imageCount)
+
 	return total
 }
 
@@ -107,10 +124,46 @@ func (tc *TokenCounter) encodingKey(model string) string {
 	}
 }
 
-func (tc *TokenCounter) estimateFallback(messages []llm.Message) int {
+func (tc *TokenCounter) estimateFallback(model string, messages []llm.Message) int {
 	total := 0
+	imageCount := 0
 	for _, m := range messages {
-		total += len(m.Content)/4 + 4
+		total += len(m.ContentString())/4 + 4
+		imageCount += countImagesInMessage(m)
 	}
-	return total + 2
+	total += 2
+	total += tc.estimateImageTokens(model, imageCount)
+	return total
+}
+
+func (tc *TokenCounter) estimateImageTokens(model string, imageCount int) int {
+	if imageCount <= 0 {
+		return 0
+	}
+	if tc.logger != nil {
+		tc.logger.Warn("image token count is approximate; using fixed estimate",
+			"model", model,
+			"image_count", imageCount,
+			"estimated_tokens_per_image", estimatedTokensPerPromptImage,
+		)
+	}
+	return imageCount * estimatedTokensPerPromptImage
+}
+
+func countImagesInMessage(m llm.Message) int {
+	if len(m.Content) == 0 {
+		return 0
+	}
+	parts, err := m.ContentParts()
+	if err != nil {
+		return 0
+	}
+
+	count := 0
+	for _, part := range parts {
+		if part.Type == "image_url" && part.ImageURL != nil && part.ImageURL.URL != "" {
+			count++
+		}
+	}
+	return count
 }

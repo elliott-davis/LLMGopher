@@ -40,7 +40,27 @@ func streamGeminiToSSE(iter *gemini.GenerateContentResponseIterator, pw *io.Pipe
 
 		for _, cand := range resp.Candidates {
 			text := extractGeminiText(cand)
+			toolCalls := extractGeminiToolCalls(cand)
 			finishReason := mapGeminiFinishReason(cand.FinishReason)
+			if len(toolCalls) > 0 && finishReason == "stop" {
+				finishReason = "tool_calls"
+			}
+
+			delta := &llm.MessageDelta{}
+			if text != "" {
+				delta.Content = llm.StringContent(text)
+			}
+			for i, tc := range toolCalls {
+				delta.ToolCalls = append(delta.ToolCalls, llm.ToolCallDelta{
+					Index: i,
+					ID:    tc.ID,
+					Type:  "function",
+					Function: llm.FunctionCall{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
+				})
+			}
 
 			chunk := llm.ChatCompletionChunk{
 				ID:      chatID,
@@ -49,10 +69,8 @@ func streamGeminiToSSE(iter *gemini.GenerateContentResponseIterator, pw *io.Pipe
 				Model:   model,
 				Choices: []llm.Choice{
 					{
-						Index: int(cand.Index),
-						Delta: &llm.Message{
-							Content: text,
-						},
+						Index:        int(cand.Index),
+						Delta:        delta,
 						FinishReason: finishReason,
 					},
 				},
@@ -74,7 +92,7 @@ func streamGeminiToSSE(iter *gemini.GenerateContentResponseIterator, pw *io.Pipe
 			Choices: []llm.Choice{
 				{
 					Index:        0,
-					Delta:        &llm.Message{},
+					Delta:        &llm.MessageDelta{},
 					FinishReason: "stop",
 				},
 			},

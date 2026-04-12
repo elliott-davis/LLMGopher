@@ -29,7 +29,7 @@ func simulateSSEStream(pw *io.PipeWriter, model, chatID string, chunks []string,
 			Choices: []llm.Choice{
 				{
 					Index: 0,
-					Delta: &llm.Message{Content: text},
+					Delta: &llm.MessageDelta{Content: llm.StringContent(text)},
 				},
 			},
 		}
@@ -46,7 +46,7 @@ func simulateSSEStream(pw *io.PipeWriter, model, chatID string, chunks []string,
 			Choices: []llm.Choice{
 				{
 					Index:        0,
-					Delta:        &llm.Message{},
+					Delta:        &llm.MessageDelta{},
 					FinishReason: "stop",
 				},
 			},
@@ -99,8 +99,8 @@ func TestSSEStream_Format(t *testing.T) {
 		if len(chunk.Choices) != 1 {
 			t.Fatalf("event %d: len(Choices) = %d, want 1", i, len(chunk.Choices))
 		}
-		if chunk.Choices[0].Delta == nil || chunk.Choices[0].Delta.Content != wantText {
-			t.Errorf("event %d: Delta.Content = %q, want %q", i, chunk.Choices[0].Delta.Content, wantText)
+		if chunk.Choices[0].Delta == nil || chunk.Choices[0].Delta.ContentString() != wantText {
+			t.Errorf("event %d: Delta.ContentString() = %q, want %q", i, chunk.Choices[0].Delta.ContentString(), wantText)
 		}
 		if chunk.Usage != nil {
 			t.Errorf("event %d: Usage should be nil for content chunks", i)
@@ -231,8 +231,10 @@ func TestSSEStream_InterceptorCompatibility(t *testing.T) {
 		}
 
 		for _, choice := range chunk.Choices {
-			if choice.Delta != nil && choice.Delta.Content != "" {
-				totalText.WriteString(choice.Delta.Content)
+			if choice.Delta != nil {
+				if s := choice.Delta.ContentString(); s != "" {
+					totalText.WriteString(s)
+				}
 			}
 		}
 

@@ -33,8 +33,8 @@ func GuardrailCheck(guard llm.Guardrail, logger *slog.Logger) Middleware {
 				return
 			}
 
-			var req llm.ChatCompletionRequest
-			if err := json.Unmarshal(body, &req); err != nil {
+			req, err := guardrailRequestFromBody(body)
+			if err != nil {
 				http.Error(w,
 					`{"error":{"message":"invalid JSON in request body","type":"invalid_request_error"}}`,
 					http.StatusBadRequest,
@@ -42,7 +42,7 @@ func GuardrailCheck(guard llm.Guardrail, logger *slog.Logger) Middleware {
 				return
 			}
 
-			verdict, err := guard.Check(r.Context(), &req)
+			verdict, err := guard.Check(r.Context(), req)
 			if err != nil {
 				logger.Error("guardrail check failed",
 					"error", err,
@@ -73,4 +73,46 @@ func GuardrailCheck(guard llm.Guardrail, logger *slog.Logger) Middleware {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func guardrailRequestFromBody(body []byte) (*llm.ChatCompletionRequest, error) {
+	var chatReq llm.ChatCompletionRequest
+	if err := json.Unmarshal(body, &chatReq); err != nil {
+		return nil, err
+	}
+	if len(chatReq.Messages) > 0 {
+		return &chatReq, nil
+	}
+
+	// /v1/completions carries prompt instead of messages. Translate it to a
+	// single user message so guardrails evaluate the same user-provided text.
+	var completionReq struct {
+		Model  string          `json:"model"`
+		Prompt json.RawMessage `json:"prompt"`
+	}
+	if err := json.Unmarshal(body, &completionReq); err != nil {
+		return nil, err
+	}
+	trimmedPrompt := bytes.TrimSpace(completionReq.Prompt)
+	if len(trimmedPrompt) == 0 {
+		return &chatReq, nil
+	}
+
+	var prompt string
+	if err := json.Unmarshal(trimmedPrompt, &prompt); err != nil {
+		// Let downstream handlers return endpoint-specific validation errors.
+		return &chatReq, nil
+	}
+
+	if completionReq.Prompt != nil {
+		translated := &llm.ChatCompletionRequest{
+			Model: completionReq.Model,
+			Messages: []llm.Message{
+				{Role: "user", Content: llm.StringContent(prompt)},
+			},
+		}
+		return translated, nil
+	}
+
+	return &chatReq, nil
 }

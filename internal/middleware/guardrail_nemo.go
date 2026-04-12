@@ -64,7 +64,7 @@ func (ng *NemoGuardrail) Check(ctx context.Context, req *llm.ChatCompletionReque
 
 	msgs := make([]nemoMessage, len(req.Messages))
 	for i, m := range req.Messages {
-		msgs[i] = nemoMessage{Role: m.Role, Content: m.Content}
+		msgs[i] = nemoMessage{Role: m.Role, Content: m.ContentString()}
 	}
 
 	payload, err := json.Marshal(nemoRequest{

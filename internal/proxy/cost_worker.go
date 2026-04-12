@@ -41,6 +41,7 @@ type RequestMeta struct {
 	Model        string
 	ProviderName string
 	Messages     []llm.Message
+	Tools        []llm.Tool
 	Streaming    bool
 	StartTime    time.Time
 }
@@ -62,10 +63,10 @@ func (cw *CostWorker) recordSyncAsync(meta *RequestMeta, resp *llm.ChatCompletio
 
 	// Fall back to local counting if the provider didn't report usage.
 	if promptTokens == 0 {
-		promptTokens = cw.tokenCounter.CountPromptTokens(meta.Model, meta.Messages)
+		promptTokens = cw.tokenCounter.CountPromptTokens(meta.Model, meta.Messages, meta.Tools...)
 	}
 	if outputTokens == 0 && len(resp.Choices) > 0 && resp.Choices[0].Message != nil {
-		outputTokens = cw.tokenCounter.CountTextTokens(meta.Model, resp.Choices[0].Message.Content)
+		outputTokens = cw.tokenCounter.CountTextTokens(meta.Model, resp.Choices[0].Message.ContentString())
 	}
 
 	totalTokens := promptTokens + outputTokens
@@ -86,7 +87,7 @@ func (cw *CostWorker) recordStreamAsync(meta *RequestMeta, interceptor *StreamIn
 	// Block until the stream is fully consumed.
 	result := interceptor.Result()
 
-	promptTokens := cw.tokenCounter.CountPromptTokens(meta.Model, meta.Messages)
+	promptTokens := cw.tokenCounter.CountPromptTokens(meta.Model, meta.Messages, meta.Tools...)
 	outputTokens := result.OutputTokens
 
 	totalTokens := promptTokens + outputTokens

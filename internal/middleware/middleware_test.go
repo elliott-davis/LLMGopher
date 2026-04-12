@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ed007183/llmgopher/internal/mocks"
 	"github.com/ed007183/llmgopher/internal/middleware"
+	"github.com/ed007183/llmgopher/internal/mocks"
 	"github.com/ed007183/llmgopher/pkg/llm"
 )
 
@@ -356,6 +356,34 @@ func TestGuardrail_RestoresBody(t *testing.T) {
 
 	if innerBody != "gpt-4o" {
 		t.Errorf("inner handler got model = %q, want %q (body not restored)", innerBody, "gpt-4o")
+	}
+}
+
+func TestGuardrail_CompletionsPromptTranslated(t *testing.T) {
+	guard := &mocks.MockGuardrail{
+		Verdict: &llm.GuardrailVerdict{Allowed: true},
+	}
+	var reached bool
+
+	handler := middleware.GuardrailCheck(guard, discardLogger)(okHandler(&reached))
+
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"model":"gpt-4o","prompt":"legacy prompt"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if !reached {
+		t.Fatal("handler was not reached")
+	}
+	if len(guard.Calls) != 1 {
+		t.Fatalf("guardrail calls = %d, want 1", len(guard.Calls))
+	}
+	if len(guard.Calls[0].Messages) != 1 {
+		t.Fatalf("guardrail request messages = %d, want 1", len(guard.Calls[0].Messages))
+	}
+	if guard.Calls[0].Messages[0].ContentString() != "legacy prompt" {
+		t.Errorf("guardrail prompt = %q, want %q", guard.Calls[0].Messages[0].ContentString(), "legacy prompt")
 	}
 }
 
