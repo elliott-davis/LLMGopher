@@ -567,6 +567,34 @@ func TestAdminAudit_NoAuth_Returns401(t *testing.T) {
 	}
 }
 
+func TestAdminUsage_NoAuth_Returns401(t *testing.T) {
+	deps, _ := newTestDeps(nil)
+	handler := api.NewRouter(deps)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/usage?group_by=model", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestAdminUsageDaily_NoAuth_Returns401(t *testing.T) {
+	deps, _ := newTestDeps(nil)
+	handler := api.NewRouter(deps)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/usage/daily", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestAdminBudget_NoAuth_Returns401(t *testing.T) {
 	deps, _ := newTestDeps(nil)
 	handler := api.NewRouter(deps)

@@ -235,6 +235,201 @@ func TestHandleGetAuditLog_Success_CapsLimit(t *testing.T) {
 	}
 }
 
+func TestHandleGetUsage_NilDB_ReturnsServiceUnavailable(t *testing.T) {
+	handler := api.HandleGetUsage(nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/usage?group_by=model", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestHandleGetUsage_MissingGroupBy_ReturnsBadRequest(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleGetUsage(db)
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/usage", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleGetUsage_InvalidGroupBy_ReturnsBadRequest(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleGetUsage(db)
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/usage?group_by=team", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleGetUsage_FromAfterTo_ReturnsBadRequest(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleGetUsage(db)
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/v1/admin/usage?group_by=model&from=2025-01-02T00:00:00Z&to=2025-01-01T00:00:00Z",
+		nil,
+	)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleGetUsage_Success(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleGetUsage(db)
+	from := time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2025, time.February, 1, 0, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery(`(?s)SELECT\s+model AS grp,.*FROM audit_log\s+WHERE created_at >= \$1 AND created_at <= \$2 AND api_key_id = \$3 AND model = \$4\s+GROUP BY model\s+ORDER BY cost_usd DESC, grp ASC`).
+		WithArgs(from, to, "key-001", "gpt-4o").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"grp",
+			"requests",
+			"prompt_tokens",
+			"completion_tokens",
+			"total_tokens",
+			"cost_usd",
+			"errors",
+			"avg_latency_ms",
+		}).AddRow("gpt-4o", int64(1240), int64(450000), int64(220000), int64(670000), 15.23, int64(12), 834.0))
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/v1/admin/usage?group_by=model&api_key_id=key-001&model=gpt-4o&from=2025-01-01T00:00:00Z&to=2025-02-01T00:00:00Z",
+		nil,
+	)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var payload struct {
+		GroupBy string `json:"group_by"`
+		From    string `json:"from"`
+		To      string `json:"to"`
+		Data    []struct {
+			Group        string  `json:"group"`
+			Requests     int64   `json:"requests"`
+			Errors       int64   `json:"errors"`
+			AvgLatencyMS float64 `json:"avg_latency_ms"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.GroupBy != "model" {
+		t.Fatalf("group_by = %q, want model", payload.GroupBy)
+	}
+	if payload.From != "2025-01-01T00:00:00Z" || payload.To != "2025-02-01T00:00:00Z" {
+		t.Fatalf("window = (%s,%s), want (2025-01-01T00:00:00Z,2025-02-01T00:00:00Z)", payload.From, payload.To)
+	}
+	if len(payload.Data) != 1 {
+		t.Fatalf("data length = %d, want 1", len(payload.Data))
+	}
+	if payload.Data[0].Group != "gpt-4o" || payload.Data[0].Requests != 1240 || payload.Data[0].Errors != 12 {
+		t.Fatalf("summary = %+v, want group=gpt-4o requests=1240 errors=12", payload.Data[0])
+	}
+	if payload.Data[0].AvgLatencyMS != 834.0 {
+		t.Fatalf("avg_latency_ms = %v, want 834", payload.Data[0].AvgLatencyMS)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestHandleGetDailyUsage_Success(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	handler := api.HandleGetDailyUsage(db)
+	from := time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2025, time.January, 8, 0, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery(`(?s)SELECT\s+DATE_TRUNC\('day', created_at\)::date::text AS day,.*FROM audit_log\s+WHERE created_at >= \$1 AND created_at <= \$2 AND api_key_id = \$3 AND model = \$4\s+GROUP BY DATE_TRUNC\('day', created_at\)::date\s+ORDER BY DATE_TRUNC\('day', created_at\)::date ASC`).
+		WithArgs(from, to, "key-001", "gpt-4o").
+		WillReturnRows(sqlmock.NewRows([]string{"day", "requests", "total_tokens", "cost_usd"}).
+			AddRow("2025-01-01", int64(120), int64(45000), 1.02).
+			AddRow("2025-01-02", int64(95), int64(38000), 0.89))
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/v1/admin/usage/daily?api_key_id=key-001&model=gpt-4o&from=2025-01-01T00:00:00Z&to=2025-01-08T00:00:00Z",
+		nil,
+	)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var payload struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+		Data []struct {
+			Date        string  `json:"date"`
+			Requests    int64   `json:"requests"`
+			TotalTokens int64   `json:"total_tokens"`
+			CostUSD     float64 `json:"cost_usd"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.From != "2025-01-01T00:00:00Z" || payload.To != "2025-01-08T00:00:00Z" {
+		t.Fatalf("window = (%s,%s), want (2025-01-01T00:00:00Z,2025-01-08T00:00:00Z)", payload.From, payload.To)
+	}
+	if len(payload.Data) != 2 {
+		t.Fatalf("data length = %d, want 2", len(payload.Data))
+	}
+	if payload.Data[0].Date != "2025-01-01" || payload.Data[0].Requests != 120 || payload.Data[0].TotalTokens != 45000 {
+		t.Fatalf("first row = %+v, want date=2025-01-01 requests=120 total_tokens=45000", payload.Data[0])
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
 func TestHandleCreateModel_NilDB_ReturnsServiceUnavailable(t *testing.T) {
 	handler := api.HandleCreateModel(nil)
 

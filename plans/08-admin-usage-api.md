@@ -1,7 +1,7 @@
 # Spec 08: Usage & Spend Summary API
 
 ## Status
-pending
+completed
 
 ## Goal
 Provide aggregated usage statistics from the audit log — total tokens, cost, and request counts grouped by model, provider, or API key over a time window. This is the primary analytics surface for operators.
@@ -128,17 +128,17 @@ Add `GET /v1/admin/usage` and `GET /v1/admin/usage/daily` to `internal/api/route
 - Export to CSV or external analytics systems
 
 ## Acceptance Criteria
-- [ ] `GET /v1/admin/usage?group_by=model` returns aggregated data per model
-- [ ] `GET /v1/admin/usage?group_by=provider` returns aggregated data per provider
-- [ ] `GET /v1/admin/usage?group_by=api_key` returns aggregated data per key
-- [ ] `from`/`to` filters correctly bound the time window
-- [ ] `api_key_id` filter limits results to one key's data
-- [ ] `GET /v1/admin/usage/daily` returns one entry per calendar day
-- [ ] Requests with `status_code >= 400` are counted in `errors`
-- [ ] Missing `group_by` parameter returns 400
-- [ ] Invalid `group_by` value returns 400
+- [x] `GET /v1/admin/usage?group_by=model` returns aggregated data per model
+- [x] `GET /v1/admin/usage?group_by=provider` returns aggregated data per provider
+- [x] `GET /v1/admin/usage?group_by=api_key` returns aggregated data per key
+- [x] `from`/`to` filters correctly bound the time window
+- [x] `api_key_id` filter limits results to one key's data
+- [x] `GET /v1/admin/usage/daily` returns one entry per calendar day
+- [x] Requests with `status_code >= 400` are counted in `errors`
+- [x] Missing `group_by` parameter returns 400
+- [x] Invalid `group_by` value returns 400
 
 ## Key Files
 - `internal/storage/usage_store.go` — new file with query functions
-- `internal/api/admin.go` — new handlers
+- `internal/api/admin_usage.go` — usage handlers
 - `internal/api/router.go` — new routes

@@ -41,6 +41,8 @@ func NewRouter(deps *Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/admin/models", HandleGetModels(deps.StateCache))
 	mux.HandleFunc("GET /v1/admin/providers", HandleGetProviders(deps.StateCache))
 	mux.Handle("GET /v1/admin/audit", applyAuthMiddleware(deps, HandleGetAuditLog(deps.DB)))
+	mux.Handle("GET /v1/admin/usage", applyAuthMiddleware(deps, HandleGetUsage(deps.DB)))
+	mux.Handle("GET /v1/admin/usage/daily", applyAuthMiddleware(deps, HandleGetDailyUsage(deps.DB)))
 	mux.HandleFunc("POST /v1/admin/keys", HandleCreateAPIKey(deps.DB))
 	mux.HandleFunc("PUT /v1/admin/keys/{id}", HandleUpdateAPIKey(deps.DB))
 	mux.HandleFunc("DELETE /v1/admin/keys/{id}", HandleDeleteAPIKey(deps.DB))
