@@ -1,6 +1,8 @@
 APP_NAME     := llmgopher
 IMAGE        := $(APP_NAME):local
 GATEWAY_PORT := 8080
+SPEC_KIT_VERSION ?= v0.8.1
+SPEC_KIT        := uvx --from git+https://github.com/github/spec-kit.git@$(SPEC_KIT_VERSION) specify
 
 # Kubernetes (production-like) settings
 CLUSTER_NAME := $(APP_NAME)
@@ -9,6 +11,7 @@ K8S_DIR      := k8s/local
 
 .PHONY: help dev dev-down dev-logs dev-ui-logs dev-ps dev-restart \
         build run test test-v \
+        spec-kit-bootstrap spec-kit-version \
         docker-build \
         k8s-up k8s-down k8s-deploy k8s-undeploy k8s-logs k8s-status \
         clean
@@ -47,6 +50,21 @@ dev-ps: ## Show running service status
 
 dev-restart: ## Rebuild and restart gateway + UI
 	docker compose up --build -d gateway ui
+
+# ---------------------------------------------------------------------------
+# Spec Kit
+# ---------------------------------------------------------------------------
+
+spec-kit-bootstrap: ## Recreate generated Spec Kit scripts, templates, skills, and extensions
+	@command -v uv >/dev/null 2>&1 || { \
+		echo "uv is required. Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh"; \
+		exit 1; \
+	}
+	$(SPEC_KIT) init --here --ai cursor-agent --ai-skills --script sh --force --no-git --ignore-agent-tools
+	$(SPEC_KIT) extension add git
+
+spec-kit-version: ## Show the pinned Spec Kit CLI version
+	$(SPEC_KIT) version
 
 # ---------------------------------------------------------------------------
 # Run locally (no containers — requires postgres + redis running)

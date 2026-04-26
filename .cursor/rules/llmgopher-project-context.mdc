@@ -1,0 +1,44 @@
+---
+description: LLMGopher architecture, commands, and project-specific engineering patterns
+alwaysApply: true
+---
+
+# LLMGopher Project Context
+
+LLMGopher is an OpenAI-compatible API gateway in Go. It proxies requests to OpenAI, Anthropic, Google Vertex AI, and related providers, with auth, rate limiting, guardrails, cost tracking, audit logging, PostgreSQL persistence, and optional Redis rate limiting.
+
+## Commands
+
+- `make build` builds `./bin/gateway`.
+- `make run` runs locally and requires Postgres plus Redis.
+- `make test` runs the full test suite; `make test-v` runs verbose tests.
+- `make dev` starts the Docker Compose dev stack; use `make dev-logs`, `make dev-down`, and `make dev-restart` for lifecycle work.
+- `make k8s-up` starts kind; `make k8s-deploy` deploys to kind.
+- Run focused tests with `go test ./internal/api/... -run TestFunctionName -v`.
+- There is no lint target; use `go vet ./...` directly.
+- Local dev test key for `make dev`: `sk-test-key-1:key-001`.
+
+## Architecture
+
+- `cmd/gateway/main.go` builds the single gateway binary.
+- `pkg/llm` is the dependency-free domain layer: canonical OpenAI-compatible types, `Provider`, and model registry.
+- `pkg/config` loads config with precedence: CLI flags, `LLMGOPHER_*` env vars, unprefixed env vars, config file, defaults.
+- `internal/api` owns the Go `http.ServeMux` router, handlers, dependency wiring, and `/health`, `/ready`, `/v1/*`, and `/v1/admin/*` routes.
+- `internal/middleware` owns the middleware chain. Remember `middleware.Chain()` reverses order: Recovery and logging are outermost, guardrail is innermost.
+- `internal/proxy` implements provider translation and async cost/audit handoff after responses are sent.
+- `internal/storage` owns Postgres access, goose migrations, hot-swapped state cache, pricing cache, audit logging, and budgets.
+- `internal/providers/google` owns Vertex AI auth and stream handling.
+- `internal/mocks` contains mock implementations for unit tests.
+
+## Project Patterns
+
+- State cache hot-swaps from the DB every 5 seconds so API keys can change without restarts.
+- Cost calculation and audit logging are intentionally non-blocking through `cost_worker.go`.
+- Provider credentials are stored AES-256-GCM encrypted and require `--provider-credentials-key` as base64 for a 32-byte key.
+- Errors should stay OpenAI-compatible: `{"error":{"message":"...","type":"...","code":"..."}}`.
+- Migrations live in `migrations/` and run automatically at startup via goose.
+- Key tables include `api_keys`, `audit_log`, `api_key_budgets`, `model_pricing`, `models`, and `providers`.
+
+## Testing
+
+New code should target 80% coverage for touched logic where practical. Use `httptest.NewRecorder()` for HTTP handler tests and mocks from `internal/mocks/` for dependencies.

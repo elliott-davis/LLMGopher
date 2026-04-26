@@ -1,2 +1,12 @@
 gen-lang-client-0088272616-f4778912caae.json
 gateway
+
+# Spec Kit generated scaffolding. Keep project-specific metadata and
+# constitution files tracked; regenerate these assets with `make spec-kit-bootstrap`.
+.specify/extensions/
+.specify/integrations/
+.specify/scripts/
+.specify/templates/
+.specify/workflows/
+.cursor/skills/speckit-*/
+.claude/skills/speckit-*/
