@@ -1,29 +1,22 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.0 -> 1.0.0
-New version: 1.0.0
+Version change: 1.0.0 -> 1.1.0
+New version: 1.1.0
 
 Modified principles:
-- I. OpenAI Compatibility -> I. Upstream API & Behavioral Parity
-- II. Non-Blocking Request Path -> II. High-Throughput Go Runtime
-- III. Security by Default -> VII. Security by Default
-- IV. Test Discipline -> VIII. Test Discipline
-- V. 12-Factor Configuration -> IX. 12-Factor Configuration
+- None
 
 Added sections:
-- III. Typed Contracts & Generated Interfaces
-- IV. Gateway Routing & Reliability
-- V. Multi-Tenant Spend Governance
-- VI. Observable & Auditable Operation
+- X. API Capability UX Parity
 
 Removed sections:
-- Mandatory semantic-version amendment policy
+- None
 
 Templates requiring updates:
-- .specify/templates/plan-template.md ✅ updated with explicit Constitution Check gates
-- .specify/templates/spec-template.md ✅ updated with upstream compatibility and non-functional criteria
-- .specify/templates/tasks-template.md ✅ updated with required test and cross-cutting task guidance
+- .specify/templates/plan-template.md ✅ updated with API capability UX parity gate
+- .specify/templates/spec-template.md ✅ updated with UI surfacing requirements and success criteria
+- .specify/templates/tasks-template.md ✅ updated with UI surface and UI test task guidance
 
 Follow-up TODOs: None.
 -->
@@ -170,6 +163,22 @@ All runtime configuration MUST follow 12-factor app principles:
 **Rationale**: The gateway runs in Docker Compose, Kubernetes, and bare-metal environments. A
 single configuration model prevents environment-specific drift bugs.
 
+### X. API Capability UX Parity
+
+New or materially changed API capabilities MUST include corresponding updates to the admin UI
+or operator-facing UI surfaces so users can discover, configure, monitor, and validate the
+capability without relying only on direct API calls. Specs and plans MUST identify the UI surface
+for each API capability, including forms, tables, detail views, status indicators, usage/audit
+views, documentation links, and error feedback as applicable.
+
+An API-only delivery is permitted only when the capability has no meaningful UI surface or is
+strictly internal. The exception MUST be documented in the spec or PR with the affected user
+role, reason UI exposure is not useful, and any follow-up needed when the capability becomes
+operator-facing.
+
+**Rationale**: LLMGopher is operated through both APIs and the admin UI. Shipping backend
+capabilities without UI exposure makes the feature hard to adopt, validate, and support.
+
 ## Development Workflow
 
 Feature development follows the layer order defined by the architecture:
@@ -183,6 +192,8 @@ Feature development follows the layer order defined by the architecture:
 4. **Routing, middleware, and proxy fourth** (`internal/middleware`, `internal/proxy`): Implement
    routing, middleware, provider translation, and streaming after contracts are stable.
 5. **Handlers last** (`internal/api`): Wire routes and handlers once all dependencies are ready.
+6. **UI exposure with API delivery** (`ui/`): Surface new or changed API capabilities in the
+   admin UI in the same delivery unless an API-only exception is documented.
 
 Database migrations in `migrations/` run automatically at startup via goose. Migrations MUST
 be backward compatible (no destructive schema changes without a multi-step migration plan).
@@ -204,6 +215,8 @@ All pull requests MUST satisfy the following before merge:
 - Multi-tenant, budget, rate-limit, and routing changes include negative tests for denied,
   exhausted, over-limit, fallback, and provider-failure scenarios as applicable.
 - Observability changes preserve redaction and avoid blocking hot-path external calls.
+- New or materially changed API capabilities include corresponding `ui/` changes or a documented
+  API-only exception explaining why no operator-facing UI exists.
 - Middleware ordering preserved: RequestID → Logging → Recovery → Auth → RateLimit → Guardrail.
   (`middleware.Chain()` reverses the slice — last element wraps the handler first.)
 - Async cost/audit path MUST NOT be converted to synchronous without explicit architecture
@@ -229,4 +242,4 @@ versioning policy may be added later when the project needs it.
 complies with (or is exempt from) the Core Principles above. The Quality Gates section
 defines the automated checks; principle compliance is a human reviewer responsibility.
 
-**Version**: 1.0.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-04-26
+**Version**: 1.1.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-04-26

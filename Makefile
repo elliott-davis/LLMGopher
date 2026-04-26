@@ -10,7 +10,7 @@ KIND_CONFIG  := k8s/local/kind-config.yaml
 K8S_DIR      := k8s/local
 
 .PHONY: help dev dev-down dev-logs dev-ui-logs dev-ps dev-restart \
-        build run test test-v \
+        build run test test-v spec-validate spec-validate-strict \
         spec-kit-bootstrap spec-kit-version \
         docker-build \
         k8s-up k8s-down k8s-deploy k8s-undeploy k8s-logs k8s-status \
@@ -131,6 +131,12 @@ test: ## Run the Go unit test suite
 
 test-v: ## Run tests with verbose output
 	go test ./... -count=1 -v
+
+spec-validate: ## Run functional validation for specs with manifests
+	go run ./cmd/specvalidate
+
+spec-validate-strict: ## Also fail implemented specs that lack validation manifests
+	go run ./cmd/specvalidate --strict
 
 # ---------------------------------------------------------------------------
 # Cleanup
