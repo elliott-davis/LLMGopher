@@ -1,0 +1,94 @@
+# Implementation Plan: API Key Management Improvements
+
+**Branch**: `[05-admin-key-management]` | **Date**: 2026-04-26 | **Spec**: `spec.md`  
+**Input**: Feature specification from `specs/05-admin-key-management/spec.md`
+
+## Summary
+
+Extend API key management with four capabilities that are essential for production operation: hard delete, key expiration, metadata/tags for cost attribution, and per-key model allowlists. The original plan marks this feature complete; functional smoke verification is still required.
+
+## Technical Context
+
+**Language/Version**: Go 1.22+  
+**Primary Dependencies**: Existing LLMGopher gateway packages, provider clients, middleware, storage, and test utilities as applicable  
+**Storage**: PostgreSQL-backed gateway state and migrations where required  
+**Testing**: `go test ./...` plus focused package tests and the smoke checks in `quickstart.md`  
+**Target Platform**: Gateway service  
+**Project Type**: OpenAI-compatible API gateway  
+**Performance Goals**: Preserve hot-path latency and streaming behavior for unaffected requests; add benchmarks or load checks when routing, caching, provider, or middleware paths change  
+**Constraints**: Preserve OpenAI-compatible errors, credential redaction, async cost/audit behavior, and configuration precedence  
+**Scale/Scope**: Admin & Operations roadmap feature converted from `plans/05-admin-key-management.md`
+
+## Constitution Check
+
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+
+- **Upstream parity**: PASS - converted plan identifies the OpenAI, LiteLLM, provider, admin, or operational behavior being matched.
+- **High-throughput runtime**: PASS - hot-path impact must stay bounded and async cost/audit behavior must remain asynchronous unless explicitly required for policy decisions.
+- **Typed contracts**: PASS - public request, response, provider, storage, and policy contracts should use typed Go structures or documented generated contracts.
+- **Routing reliability**: N/A - no first-order routing behavior changes unless introduced by implementation details.
+- **Multi-tenant spend governance**: PASS - admin, budget, tenant, RBAC, usage, or audit behavior is central to this feature.
+- **Observability**: PASS - request IDs, structured logs, audit context, metrics, traces, callbacks, or smoke evidence must cover meaningful runtime paths.
+- **Security and config**: PASS - credentials remain encrypted, hashed, and redacted; config follows established precedence and startup validation.
+- **Test discipline**: PASS - success, failure, compatibility, and smoke verification are required before verified status.
+
+## Project Structure
+
+### Documentation (this feature)
+
+```text
+specs/05-admin-key-management/
+├── spec.md
+├── plan.md
+├── research.md
+├── quickstart.md
+├── contracts/
+│   └── admin_key_management_contract.md
+└── checklists/
+    └── requirements.md
+```
+
+### Source Code (repository root)
+
+```text
+internal/api/
+internal/storage/
+internal/middleware/
+migrations/
+```
+
+**Structure Decision**: Follow the existing gateway layer boundaries and keep public contracts, provider adapters, middleware, storage, and API handlers in their established packages.
+
+## Converted Plan Details
+
+### Background
+
+internal/api/admin.go handles key CRUD. The api_keys table has id, key_hash, name, rate_limit_rps, is_active, created_at, updated_at. The llm.APIKeyConfig type mirrors this schema. Current gaps: - No DELETE route for keys (only soft-deactivation via is_active) - No expiration - keys are valid indefinitely - No metadata - no way to tag keys for cost attribution or tenant tracking - No model restriction - any key can call any model Auth middleware reads the state cache (internal/middleware/auth.go) using AuthWithStateCache.
+
+### Dependencies
+
+- No explicit cross-plan dependencies beyond existing gateway infrastructure.
+
+### Key Files From Original Plan
+
+- `internal/storage/migrations/00004_api_key_enhancements.sql - new migration (using next available migration number)`
+- `pkg/llm/types.go - extend APIKeyConfig`
+- `internal/storage/cache.go - update cache poll query and scan`
+- `internal/middleware/auth.go - expiry check`
+- `internal/proxy/handler.go - model allowlist check`
+- `internal/proxy/handler_completions.go - model allowlist check for completions`
+- `internal/proxy/handler_embeddings.go - model allowlist check for embeddings`
+- `internal/api/admin.go - new delete/update routes and updated create`
+- `internal/api/router.go - wire new routes`
+
+## Complexity Tracking
+
+No constitution violations are expected from the conversion. Any later implementation that adds blocking hot-path calls, unbounded work, or credential exposure must document an exception here before proceeding.
+
+## Verification Strategy
+
+- Run focused tests for packages touched by the original plan.
+- Run `go test ./...` before marking implementation complete.
+- Execute the functional smoke checks in `quickstart.md`.
+- Confirm logs, audit records, metrics, traces, or callback events preserve redaction and request context where applicable.
+- Record smoke-test evidence before changing status from "functional verification needed" or "pending implementation" to verified.

@@ -1,0 +1,39 @@
+feature_id: 03-models-list-endpoint
+status: implemented
+spec: spec.md
+contracts:
+  - contracts/openai-models-list.md
+required_evidence:
+  - FR-001
+  - FR-002
+  - FR-003
+  - FR-004
+  - FR-005
+  - FR-006
+  - FR-007
+  - SC-001
+  - SC-002
+test_commands:
+  - name: models endpoint handler and route contract tests
+    command:
+      - go
+      - test
+      - ./internal/api
+      - -run
+      - Test(HandleListModels|ModelsListRoute)
+      - -count=1
+    evidence:
+      - OpenAI-compatible list schema
+      - Empty model configuration behavior
+      - Existing authentication behavior
+smoke_commands:
+  - name: authenticated models route smoke
+    command:
+      - go
+      - test
+      - ./internal/api
+      - -run
+      - TestModelsListRoute_WithAuth_ReturnsListResponse
+      - -count=1
+    evidence:
+      - Authenticated GET /v1/models route returns a list response

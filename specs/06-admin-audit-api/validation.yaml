@@ -1,0 +1,40 @@
+feature_id: 06-admin-audit-api
+status: implemented
+spec: spec.md
+contracts:
+  - contracts/admin_audit_api_contract.md
+required_evidence:
+  - FR-004
+  - FR-005
+  - FR-006
+  - FR-007
+  - FR-008
+  - FR-009
+  - FR-010
+  - SC-001
+  - SC-002
+test_commands:
+  - name: audit query handler contract tests
+    command:
+      - go
+      - test
+      - ./internal/api
+      - -run
+      - TestHandleGetAuditLog
+      - -count=1
+    evidence:
+      - Paginated audit rows
+      - API key, model, provider, status, and time filters
+      - Limit cap and total count behavior
+      - Safe unavailable and invalid-input errors
+smoke_commands:
+  - name: audit admin route auth smoke
+    command:
+      - go
+      - test
+      - ./internal/api
+      - -run
+      - TestAdminAudit_NoAuth_Returns401
+      - -count=1
+    evidence:
+      - GET /v1/admin/audit stays behind existing API key authentication

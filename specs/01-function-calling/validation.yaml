@@ -1,0 +1,38 @@
+feature_id: 01-function-calling
+status: implemented
+spec: spec.md
+contracts:
+  - contracts/openai-chat-tools.md
+required_evidence:
+  - FR-001
+  - FR-002
+  - FR-003
+  - FR-004
+  - FR-005
+  - SC-001
+  - SC-002
+test_commands:
+  - name: tool call gateway and provider contract tests
+    command:
+      - go
+      - test
+      - ./internal/api
+      - ./internal/proxy
+      - -run
+      - Test(ChatCompletions_ToolCall|AnthropicProvider_ToolCall|BedrockProviderChatCompletion).*
+      - -count=1
+    evidence:
+      - OpenAI-compatible tool request pass-through
+      - Provider tool-use response translation
+      - Streaming tool-call delta translation
+smoke_commands:
+  - name: in-process gateway tool-call round trip
+    command:
+      - go
+      - test
+      - ./internal/api
+      - -run
+      - TestChatCompletions_ToolCall_ResponseRoundTrip
+      - -count=1
+    evidence:
+      - Running-gateway equivalent tool-call response smoke
