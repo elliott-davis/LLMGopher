@@ -1,22 +1,24 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.0 -> 1.1.0
-New version: 1.1.0
+Version change: 1.1.0 -> 1.2.0
+New version: 1.2.0
 
 Modified principles:
-- None
+- VIII. Test Discipline expanded with golangci-lint and linter-first enforcement guidance
+- Quality Gates updated to require golangci-lint when applicable
 
 Added sections:
-- X. API Capability UX Parity
+- None
 
 Removed sections:
 - None
 
 Templates requiring updates:
-- .specify/templates/plan-template.md ✅ updated with API capability UX parity gate
-- .specify/templates/spec-template.md ✅ updated with UI surfacing requirements and success criteria
-- .specify/templates/tasks-template.md ✅ updated with UI surface and UI test task guidance
+- .specify/templates/plan-template.md ✅ updated with golangci-lint gate
+- .specify/templates/spec-template.md ✅ checked; no spec-level changes required
+- .specify/templates/tasks-template.md ✅ updated with lint-first task guidance
+- CLAUDE.md ✅ updated with golangci-lint command guidance
 
 Follow-up TODOs: None.
 -->
@@ -137,6 +139,13 @@ credential leak has outsized blast radius compared to a typical service.
 
 All new production code MUST target 80% test coverage. The following conventions are mandatory:
 
+- Go changes MUST pass `golangci-lint run` when the tool is available in the development or CI
+  environment. Existing `go vet ./...` checks remain part of the quality bar, but golangci-lint
+  is the preferred aggregate enforcement surface for Go static analysis.
+- New repeatable correctness, security, API-compatibility, formatting, or maintainability rules
+  SHOULD be enforced with golangci-lint configuration before adding LLM-only review rules. If a
+  rule can be made deterministic with an existing or reasonable new linter, use the linter so
+  compliance is cheap, local, and CI-verifiable.
 - HTTP handler tests MUST use `httptest.NewRecorder()`.
 - Interface dependencies MUST be exercised via mocks from `internal/mocks/`.
 - Integration paths (middleware chain, provider proxy) MUST have at least one end-to-end test
@@ -205,7 +214,8 @@ Features that depend on runtime-configurable state MUST use the cache, not in-pr
 
 All pull requests MUST satisfy the following before merge:
 
-- `go vet ./...` passes with zero warnings.
+- `golangci-lint run` passes with zero warnings when golangci-lint is available; otherwise
+  `go vet ./...` passes with zero warnings as the minimum static analysis fallback.
 - `go test ./...` passes with 80%+ coverage on changed packages.
 - No new hardcoded credentials, secrets, or API keys in any committed file.
 - Public API changes identify the upstream LiteLLM, OpenAI, or provider behavior being matched
@@ -242,4 +252,4 @@ versioning policy may be added later when the project needs it.
 complies with (or is exempt from) the Core Principles above. The Quality Gates section
 defines the automated checks; principle compliance is a human reviewer responsibility.
 
-**Version**: 1.1.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-04-26
+**Version**: 1.2.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-05-02

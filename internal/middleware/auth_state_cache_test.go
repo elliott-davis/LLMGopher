@@ -73,13 +73,12 @@ func TestAuthWithStateCache_ValidKey_Passes(t *testing.T) {
 }
 
 type authStateKeyRow struct {
-	id          string
-	keyHash     string
-	name        string
-	expiresAt   *time.Time
-	metadata    []byte
-	models      []byte
-	rateLimitPS int
+	id        string
+	keyHash   string
+	name      string
+	expiresAt *time.Time
+	metadata  []byte
+	models    []byte
 }
 
 func buildAuthStateCache(t *testing.T, key authStateKeyRow) *storage.StateCache {

@@ -138,6 +138,7 @@ func run(cmd *cobra.Command, _ []string) error {
 		anthropicProvider := proxy.NewAnthropicProvider(
 			cfg.Providers.Anthropic.APIKey,
 			cfg.Providers.Anthropic.BaseURL,
+			logger,
 		)
 		registry.Register(anthropicProvider, "claude*")
 		logger.Info("registered Anthropic provider")

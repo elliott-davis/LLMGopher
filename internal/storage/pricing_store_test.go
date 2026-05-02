@@ -9,8 +9,8 @@ import (
 func TestPgPricingStore_LookupPricing_ExactMatch(t *testing.T) {
 	ps := &PgPricingStore{
 		cache: map[string]llm.ModelPricing{
-			"gpt-4o":           {PromptPer1K: 0.0025, CompletionPer1K: 0.0100},
-			"gpt-4o-mini":      {PromptPer1K: 0.00015, CompletionPer1K: 0.0006},
+			"gpt-4o":            {PromptPer1K: 0.0025, CompletionPer1K: 0.0100},
+			"gpt-4o-mini":       {PromptPer1K: 0.00015, CompletionPer1K: 0.0006},
 			"claude-3-5-sonnet": {PromptPer1K: 0.0030, CompletionPer1K: 0.0150},
 		},
 	}

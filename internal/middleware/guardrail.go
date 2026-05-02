@@ -24,7 +24,7 @@ func GuardrailCheck(guard llm.Guardrail, logger *slog.Logger) Middleware {
 			// Buffer the body so we can read it for the guardrail check
 			// and then replay it for the actual handler.
 			body, err := io.ReadAll(r.Body)
-			r.Body.Close()
+			_ = r.Body.Close()
 			if err != nil {
 				http.Error(w,
 					`{"error":{"message":"failed to read request body","type":"invalid_request_error"}}`,
@@ -101,7 +101,7 @@ func guardrailRequestFromBody(body []byte) (*llm.ChatCompletionRequest, error) {
 	var prompt string
 	if err := json.Unmarshal(trimmedPrompt, &prompt); err != nil {
 		// Let downstream handlers return endpoint-specific validation errors.
-		return &chatReq, nil
+		return &chatReq, nil //nolint:nilerr
 	}
 
 	if completionReq.Prompt != nil {

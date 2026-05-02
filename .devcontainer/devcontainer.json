@@ -22,7 +22,11 @@
     },
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
-  "postCreateCommand": "bash -lc 'curl -LsSf https://astral.sh/uv/install.sh | sh && go mod download && cd ui && npm ci'",
+  "postCreateCommand": [
+    "bash",
+    "-lc",
+    "curl -LsSf https://astral.sh/uv/install.sh | sh && curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(go env GOPATH)/bin && go mod download && cd ui && npm ci"
+  ],
   "customizations": {
     "vscode": {
       "extensions": [

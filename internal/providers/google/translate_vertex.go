@@ -13,7 +13,7 @@ import (
 // buildVertexModel configures a Vertex AI GenerativeModel from the canonical
 // request. It sets generation parameters, tools, and extracts system instructions
 // from the message history, returning the model and the non-system content history.
-func buildVertexModel(client *vertex.Client, modelName string, req *llm.ChatCompletionRequest) (*vertex.GenerativeModel, []*vertex.Content) {
+func buildVertexModel(client *vertex.Client, modelName string, req *llm.ChatCompletionRequest) (*vertex.GenerativeModel, []*vertex.Content, error) {
 	model := client.GenerativeModel(modelName)
 
 	if req.Temperature != nil {
@@ -59,7 +59,10 @@ func buildVertexModel(client *vertex.Client, modelName string, req *llm.ChatComp
 		case "system":
 			systemParts = append(systemParts, vertexContentPartsFromMessage(m)...)
 		case "assistant":
-			parts := vertexTextAndFuncCallParts(m)
+			parts, err := vertexTextAndFuncCallParts(m)
+			if err != nil {
+				return nil, nil, err
+			}
 			history = append(history, &vertex.Content{
 				Role:  "model",
 				Parts: parts,
@@ -95,15 +98,17 @@ func buildVertexModel(client *vertex.Client, modelName string, req *llm.ChatComp
 		model.SystemInstruction = &vertex.Content{Parts: systemParts}
 	}
 
-	return model, history
+	return model, history, nil
 }
 
-func vertexTextAndFuncCallParts(m llm.Message) []vertex.Part {
+func vertexTextAndFuncCallParts(m llm.Message) ([]vertex.Part, error) {
 	parts := vertexContentPartsFromMessage(m)
 	for _, tc := range m.ToolCalls {
 		var args map[string]any
 		if tc.Function.Arguments != "" {
-			json.Unmarshal([]byte(tc.Function.Arguments), &args)
+			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+				return nil, fmt.Errorf("tool call %q: invalid arguments JSON: %w", tc.Function.Name, err)
+			}
 		}
 		parts = append(parts, vertex.FunctionCall{
 			Name: tc.Function.Name,
@@ -113,7 +118,7 @@ func vertexTextAndFuncCallParts(m llm.Message) []vertex.Part {
 	if len(parts) == 0 {
 		parts = []vertex.Part{vertex.Text("")}
 	}
-	return parts
+	return parts, nil
 }
 
 func vertexContentPartsFromMessage(m llm.Message) []vertex.Part {
@@ -329,7 +334,7 @@ func jsonSchemaToVertexSchema(raw json.RawMessage) *vertex.Schema {
 
 	if t, ok := m["type"]; ok {
 		var typStr string
-		json.Unmarshal(t, &typStr)
+		_ = json.Unmarshal(t, &typStr)
 		switch typStr {
 		case "string":
 			schema.Type = vertex.TypeString
@@ -347,12 +352,12 @@ func jsonSchemaToVertexSchema(raw json.RawMessage) *vertex.Schema {
 	}
 
 	if d, ok := m["description"]; ok {
-		json.Unmarshal(d, &schema.Description)
+		_ = json.Unmarshal(d, &schema.Description)
 	}
 
 	if e, ok := m["enum"]; ok {
 		var enums []string
-		json.Unmarshal(e, &enums)
+		_ = json.Unmarshal(e, &enums)
 		schema.Enum = enums
 	}
 
@@ -368,7 +373,7 @@ func jsonSchemaToVertexSchema(raw json.RawMessage) *vertex.Schema {
 
 	if req, ok := m["required"]; ok {
 		var required []string
-		json.Unmarshal(req, &required)
+		_ = json.Unmarshal(req, &required)
 		schema.Required = required
 	}
 

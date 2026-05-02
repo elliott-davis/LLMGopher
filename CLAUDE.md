@@ -26,7 +26,9 @@ Run a single test:
 go test ./internal/api/... -run TestFunctionName -v
 ```
 
-There is no lint target in the Makefile. Use `go vet ./...` directly.
+There is no lint target in the Makefile. Use `golangci-lint run` when available; otherwise use
+`go vet ./...` as the minimum static analysis fallback. Prefer adding deterministic
+golangci-lint rules for repeatable checks before adding LLM-only review guidance.
 
 Local dev test key: `sk-test-key-1:key-001` (when using `make dev`).
 

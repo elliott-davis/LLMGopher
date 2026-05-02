@@ -75,7 +75,7 @@ func syncDynamicProviderRegistrations(
 		return err
 	}
 
-	RegisterDynamicOpenAICompatProviders(registry, state, credentialTokens, logger)
+	RegisterDynamicOpenAICompatProviders(registry, state, credentialTokens, logger) //nolint:contextcheck // NewBedrockProvider initializes a client and does not need a live request context
 	return nil
 }
 

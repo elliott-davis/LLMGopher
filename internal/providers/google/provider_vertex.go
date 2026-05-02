@@ -35,7 +35,10 @@ func (p *VertexProvider) ChatCompletion(ctx context.Context, req *llm.ChatComple
 	}
 
 	modelName := stripPrefix(req.Model, "vertex_ai/")
-	model, history := buildVertexModel(client, modelName, req)
+	model, history, err := buildVertexModel(client, modelName, req)
+	if err != nil {
+		return nil, fmt.Errorf("vertex build model: %w", err)
+	}
 
 	chat := model.StartChat()
 	chatHistory, lastParts := splitVertexHistory(history)
@@ -57,7 +60,10 @@ func (p *VertexProvider) ChatCompletionStream(ctx context.Context, req *llm.Chat
 	}
 
 	modelName := stripPrefix(req.Model, "vertex_ai/")
-	model, history := buildVertexModel(client, modelName, req)
+	model, history, err := buildVertexModel(client, modelName, req)
+	if err != nil {
+		return nil, fmt.Errorf("vertex build model: %w", err)
+	}
 
 	chat := model.StartChat()
 	chatHistory, lastParts := splitVertexHistory(history)

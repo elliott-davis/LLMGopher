@@ -36,7 +36,10 @@ func (p *GeminiProvider) ChatCompletion(ctx context.Context, req *llm.ChatComple
 	}
 
 	modelName := stripPrefix(req.Model, "gemini/")
-	model, history := buildGeminiModel(client, modelName, req)
+	model, history, err := buildGeminiModel(client, modelName, req)
+	if err != nil {
+		return nil, fmt.Errorf("gemini build model: %w", err)
+	}
 
 	chat := model.StartChat()
 	chatHistory, lastParts := splitGeminiHistory(history)
@@ -58,7 +61,10 @@ func (p *GeminiProvider) ChatCompletionStream(ctx context.Context, req *llm.Chat
 	}
 
 	modelName := stripPrefix(req.Model, "gemini/")
-	model, history := buildGeminiModel(client, modelName, req)
+	model, history, err := buildGeminiModel(client, modelName, req)
+	if err != nil {
+		return nil, fmt.Errorf("gemini build model: %w", err)
+	}
 
 	chat := model.StartChat()
 	chatHistory, lastParts := splitGeminiHistory(history)

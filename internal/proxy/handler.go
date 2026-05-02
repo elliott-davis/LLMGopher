@@ -206,7 +206,7 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request, provider ll
 			"provider", provider.Name(),
 			"request_id", meta.RequestID,
 		)
-		h.costWorker.RecordError(meta, http.StatusBadGateway, err.Error())
+		h.costWorker.RecordError(meta, http.StatusBadGateway, err.Error()) //nolint:contextcheck // intentional fire-and-forget after response
 		writeError(w, http.StatusBadGateway, "upstream provider error: "+err.Error(), "upstream_error")
 		return
 	}
@@ -216,7 +216,7 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request, provider ll
 	json.NewEncoder(w).Encode(resp)
 
 	// Fire-and-forget: count tokens, calculate cost, deduct budget, write audit log.
-	h.costWorker.RecordSync(meta, resp, http.StatusOK)
+	h.costWorker.RecordSync(meta, resp, http.StatusOK) //nolint:contextcheck // intentional fire-and-forget after response
 }
 
 func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, provider llm.Provider, req *llm.ChatCompletionRequest, meta *RequestMeta) {
@@ -227,7 +227,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, provider 
 			"provider", provider.Name(),
 			"request_id", meta.RequestID,
 		)
-		h.costWorker.RecordError(meta, http.StatusBadGateway, err.Error())
+		h.costWorker.RecordError(meta, http.StatusBadGateway, err.Error()) //nolint:contextcheck // intentional fire-and-forget after response
 		writeError(w, http.StatusBadGateway, "upstream provider error: "+err.Error(), "upstream_error")
 		return
 	}
@@ -238,7 +238,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, provider 
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		interceptor.Close()
+		_ = interceptor.Close()
 		writeError(w, http.StatusInternalServerError, "streaming not supported", "server_error")
 		return
 	}
@@ -255,7 +255,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, provider 
 	for {
 		n, readErr := interceptor.Read(buf)
 		if n > 0 {
-			w.Write(buf[:n])
+			_, _ = w.Write(buf[:n])
 			flusher.Flush()
 		}
 		if readErr != nil {
@@ -272,7 +272,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, provider 
 	// Fire-and-forget: the cost worker waits for the interceptor to finish
 	// accumulating, then counts tokens, calculates cost, deducts budget,
 	// and writes the audit log — all asynchronously.
-	h.costWorker.RecordStream(meta, interceptor, http.StatusOK)
+	h.costWorker.RecordStream(meta, interceptor, http.StatusOK) //nolint:contextcheck // intentional fire-and-forget after response
 }
 
 func writeError(w http.ResponseWriter, status int, msg, errType string) {

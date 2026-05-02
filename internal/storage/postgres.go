@@ -32,7 +32,7 @@ func NewPostgresDB(ctx context.Context, cfg config.PostgresConfig, logger *slog.
 	defer cancel()
 
 	if err := db.PingContext(pingCtx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 

@@ -10,7 +10,7 @@ import (
 )
 
 func TestResolveConfiguredModel_ByAlias(t *testing.T) {
-	state := testGatewayState("vertex", "vertex_ai/gemini-2.5-flash", "gemini-2.5-flash")
+	state := testGatewayState("vertex_ai/gemini-2.5-flash", "gemini-2.5-flash")
 
 	got, ok := resolveConfiguredModel(state, "vertex_ai/gemini-2.5-flash")
 	if !ok {
@@ -22,7 +22,7 @@ func TestResolveConfiguredModel_ByAlias(t *testing.T) {
 }
 
 func TestResolveConfiguredModel_ByProviderQualifiedName(t *testing.T) {
-	state := testGatewayState("vertex", "vertex_ai/gemini-2.5-flash", "gemini-2.5-flash")
+	state := testGatewayState("vertex_ai/gemini-2.5-flash", "gemini-2.5-flash")
 
 	got, ok := resolveConfiguredModel(state, "vertex/gemini-2.5-flash")
 	if !ok {
@@ -34,7 +34,7 @@ func TestResolveConfiguredModel_ByProviderQualifiedName(t *testing.T) {
 }
 
 func TestResolveConfiguredModel_ByProviderQualifiedNameWithPublisherModel(t *testing.T) {
-	state := testGatewayState("vertex", "vertex_ai/google-gemini", "google/gemini-2.5-flash")
+	state := testGatewayState("vertex_ai/google-gemini", "google/gemini-2.5-flash")
 
 	got, ok := resolveConfiguredModel(state, "vertex/gemini-2.5-flash")
 	if !ok {
@@ -63,7 +63,7 @@ func TestResolveConfiguredModel_ByProviderQualifiedNameWithDisplayProviderName(t
 }
 
 func TestResolveConfiguredModel_UnknownProviderQualifiedName(t *testing.T) {
-	state := testGatewayState("vertex", "vertex_ai/gemini-2.5-flash", "gemini-2.5-flash")
+	state := testGatewayState("vertex_ai/gemini-2.5-flash", "gemini-2.5-flash")
 
 	if _, ok := resolveConfiguredModel(state, "openai/gemini-2.5-flash"); ok {
 		t.Fatal("resolveConfiguredModel() matched = true, want false")
@@ -118,10 +118,10 @@ func TestPreferredProviderRegistryName_InfersBedrock(t *testing.T) {
 	}
 }
 
-func testGatewayState(providerName, alias, name string) *storage.GatewayState {
+func testGatewayState(alias, name string) *storage.GatewayState {
 	return testGatewayStateWithProvider(&llm.ProviderConfig{
 		ID:   uuid.NewString(),
-		Name: providerName,
+		Name: "vertex",
 	}, alias, name)
 }
 

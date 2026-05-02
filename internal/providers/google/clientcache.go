@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	gemini "github.com/google/generative-ai-go/genai"
 	vertex "cloud.google.com/go/vertexai/genai"
+	gemini "github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
 )
 
@@ -147,10 +147,10 @@ func (c *VertexClientCache) Close() error {
 func buildVertexOpts(key VertexClientKey) []option.ClientOption {
 	var opts []option.ClientOption
 	if key.CredentialsJSON != "" {
-		opts = append(opts, option.WithCredentialsJSON([]byte(key.CredentialsJSON)))
+		opts = append(opts, option.WithCredentialsJSON([]byte(key.CredentialsJSON))) //nolint:staticcheck // TODO: migrate to google.CredentialsFromJSON when credential handling is refactored
 	}
 	if key.CredentialsFile != "" {
-		opts = append(opts, option.WithCredentialsFile(key.CredentialsFile))
+		opts = append(opts, option.WithCredentialsFile(key.CredentialsFile)) //nolint:staticcheck // TODO: migrate to google.CredentialsFromFile when credential handling is refactored
 	}
 	return opts
 }

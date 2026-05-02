@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -62,7 +64,7 @@ func TestAnthropicProvider_ToolCall_Sync(t *testing.T) {
 	srv := fakeAnthropicServer(t, http.StatusOK, anthropicResp)
 	defer srv.Close()
 
-	p := NewAnthropicProvider("test-key", srv.URL)
+	p := NewAnthropicProvider("test-key", srv.URL, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	req := &llm.ChatCompletionRequest{
 		Model: "claude-3-5-sonnet-20241022",
@@ -146,7 +148,7 @@ func TestAnthropicProvider_ToolCall_RequestWireFormat(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewAnthropicProvider("test-key", srv.URL)
+	p := NewAnthropicProvider("test-key", srv.URL, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	req := &llm.ChatCompletionRequest{
 		Model: "claude-3-5-sonnet-20241022",
@@ -213,7 +215,7 @@ func TestAnthropicProvider_ToolCall_Streaming(t *testing.T) {
 	srv := fakeAnthropicSSEServer(t, sseEvents)
 	defer srv.Close()
 
-	p := NewAnthropicProvider("test-key", srv.URL)
+	p := NewAnthropicProvider("test-key", srv.URL, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	req := &llm.ChatCompletionRequest{
 		Model:  "claude-3-5-sonnet-20241022",

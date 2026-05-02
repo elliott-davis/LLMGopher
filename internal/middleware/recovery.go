@@ -10,7 +10,7 @@ import (
 func Recovery(logger *slog.Logger) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() {
+			defer func() { //nolint:contextcheck // recover() can't propagate a context
 				if err := recover(); err != nil {
 					logger.Error("panic recovered",
 						"error", err,

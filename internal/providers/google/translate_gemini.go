@@ -13,7 +13,7 @@ import (
 // buildGeminiModel configures a GenerativeModel from the canonical request.
 // It sets generation parameters, tools, and extracts system instructions from
 // the message history, returning the model and the non-system content history.
-func buildGeminiModel(client *gemini.Client, modelName string, req *llm.ChatCompletionRequest) (*gemini.GenerativeModel, []*gemini.Content) {
+func buildGeminiModel(client *gemini.Client, modelName string, req *llm.ChatCompletionRequest) (*gemini.GenerativeModel, []*gemini.Content, error) {
 	model := client.GenerativeModel(modelName)
 
 	if req.Temperature != nil {
@@ -59,7 +59,10 @@ func buildGeminiModel(client *gemini.Client, modelName string, req *llm.ChatComp
 		case "system":
 			systemParts = append(systemParts, geminiContentPartsFromMessage(m)...)
 		case "assistant":
-			parts := textAndFuncCallParts(m)
+			parts, err := textAndFuncCallParts(m)
+			if err != nil {
+				return nil, nil, err
+			}
 			history = append(history, &gemini.Content{
 				Role:  "model",
 				Parts: parts,
@@ -98,17 +101,19 @@ func buildGeminiModel(client *gemini.Client, modelName string, req *llm.ChatComp
 		model.SystemInstruction = &gemini.Content{Parts: systemParts}
 	}
 
-	return model, history
+	return model, history, nil
 }
 
 // textAndFuncCallParts converts an assistant message to Gemini Parts,
 // including FunctionCall parts for any tool calls.
-func textAndFuncCallParts(m llm.Message) []gemini.Part {
+func textAndFuncCallParts(m llm.Message) ([]gemini.Part, error) {
 	parts := geminiContentPartsFromMessage(m)
 	for _, tc := range m.ToolCalls {
 		var args map[string]any
 		if tc.Function.Arguments != "" {
-			json.Unmarshal([]byte(tc.Function.Arguments), &args)
+			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+				return nil, fmt.Errorf("tool call %q: invalid arguments JSON: %w", tc.Function.Name, err)
+			}
 		}
 		parts = append(parts, gemini.FunctionCall{
 			Name: tc.Function.Name,
@@ -118,7 +123,7 @@ func textAndFuncCallParts(m llm.Message) []gemini.Part {
 	if len(parts) == 0 {
 		parts = []gemini.Part{gemini.Text("")}
 	}
-	return parts
+	return parts, nil
 }
 
 func geminiContentPartsFromMessage(m llm.Message) []gemini.Part {
@@ -354,7 +359,7 @@ func jsonSchemaToGeminiSchema(raw json.RawMessage) *gemini.Schema {
 
 	if t, ok := m["type"]; ok {
 		var typStr string
-		json.Unmarshal(t, &typStr)
+		_ = json.Unmarshal(t, &typStr)
 		switch typStr {
 		case "string":
 			schema.Type = gemini.TypeString
@@ -372,12 +377,12 @@ func jsonSchemaToGeminiSchema(raw json.RawMessage) *gemini.Schema {
 	}
 
 	if d, ok := m["description"]; ok {
-		json.Unmarshal(d, &schema.Description)
+		_ = json.Unmarshal(d, &schema.Description)
 	}
 
 	if e, ok := m["enum"]; ok {
 		var enums []string
-		json.Unmarshal(e, &enums)
+		_ = json.Unmarshal(e, &enums)
 		schema.Enum = enums
 	}
 
@@ -393,7 +398,7 @@ func jsonSchemaToGeminiSchema(raw json.RawMessage) *gemini.Schema {
 
 	if req, ok := m["required"]; ok {
 		var required []string
-		json.Unmarshal(req, &required)
+		_ = json.Unmarshal(req, &required)
 		schema.Required = required
 	}
 

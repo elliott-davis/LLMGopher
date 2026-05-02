@@ -28,10 +28,10 @@ type litellmEntry struct {
 // source (defaults to LiteLLM's community-maintained pricing data) and
 // upserts it into the database.
 type PricingSyncer struct {
-	store      *PgPricingStore
-	httpClient *http.Client
+	store       *PgPricingStore
+	httpClient  *http.Client
 	upstreamURL string
-	logger     *slog.Logger
+	logger      *slog.Logger
 
 	stopCh chan struct{}
 	done   chan struct{}

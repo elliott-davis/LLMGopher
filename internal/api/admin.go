@@ -814,12 +814,13 @@ func HandleUpdateProviderWithValidation(db *sql.DB, providerCredentialKey []byte
 		}
 		if validator != nil &&
 			credentialToken != "" {
-			if authType == "openai_compat" {
+			switch authType {
+			case "openai_compat":
 				if err := validator.ValidateWithBaseURL(r.Context(), "openai_compat", credentialToken, payload.BaseURL); err != nil {
 					writeCredentialValidationFailure(w, err)
 					return
 				}
-			} else if authType == "bearer" {
+			case "bearer":
 				if providerName := inferProviderForCredentialValidation(payload.BaseURL); providerName != "" {
 					if err := validator.Validate(r.Context(), providerName, credentialToken); err != nil {
 						writeCredentialValidationFailure(w, err)

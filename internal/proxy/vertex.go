@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	vertexModelPrefix   = "vertex/"
+	vertexModelPrefix      = "vertex/"
 	vertexDefaultPublisher = "google" // Vertex openapi endpoint expects publisher/model (e.g. google/gemini-2.5-flash)
 )
 

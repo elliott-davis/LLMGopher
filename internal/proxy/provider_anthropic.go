@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -22,16 +23,21 @@ type AnthropicProvider struct {
 	baseURL string
 	version string
 	client  *http.Client
+	logger  *slog.Logger
 }
 
-func NewAnthropicProvider(apiKey, baseURL string) *AnthropicProvider {
+func NewAnthropicProvider(apiKey, baseURL string, logger *slog.Logger) *AnthropicProvider {
 	if baseURL == "" {
 		baseURL = "https://api.anthropic.com"
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 	return &AnthropicProvider{
 		apiKey:  apiKey,
 		baseURL: baseURL,
 		version: "2023-06-01",
+		logger:  logger,
 		client:  &http.Client{},
 	}
 }
@@ -537,7 +543,9 @@ func (p *AnthropicProvider) translateStream(src io.ReadCloser, dst *io.PipeWrite
 		}
 		var eventType string
 		if t, ok := raw["type"]; ok {
-			json.Unmarshal(t, &eventType)
+			if err := json.Unmarshal(t, &eventType); err != nil {
+				p.logger.Warn("anthropic stream: unexpected non-string event type", "raw", string(t))
+			}
 		}
 
 		switch eventType {
@@ -595,7 +603,9 @@ func (p *AnthropicProvider) translateStream(src io.ReadCloser, dst *io.PipeWrite
 			}
 			var deltaType string
 			if t, ok := rawDelta["type"]; ok {
-				json.Unmarshal(t, &deltaType)
+				if err := json.Unmarshal(t, &deltaType); err != nil {
+					p.logger.Warn("anthropic stream: unexpected non-string delta type", "raw", string(t))
+				}
 			}
 
 			switch deltaType {

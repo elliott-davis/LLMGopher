@@ -234,7 +234,7 @@ func (h *Handler) handleCompletionSync(
 			"provider", provider.Name(),
 			"request_id", meta.RequestID,
 		)
-		h.costWorker.RecordError(meta, http.StatusBadGateway, err.Error())
+		h.costWorker.RecordError(meta, http.StatusBadGateway, err.Error()) //nolint:contextcheck // intentional fire-and-forget after response
 		writeError(w, http.StatusBadGateway, "upstream provider error: "+err.Error(), "upstream_error")
 		return
 	}
@@ -245,7 +245,7 @@ func (h *Handler) handleCompletionSync(
 	json.NewEncoder(w).Encode(completionResp)
 
 	// Fire-and-forget accounting shares the same chat-based cost worker path.
-	h.costWorker.RecordSync(meta, resp, http.StatusOK)
+	h.costWorker.RecordSync(meta, resp, http.StatusOK) //nolint:contextcheck // intentional fire-and-forget after response
 }
 
 func (h *Handler) handleCompletionStream(
@@ -262,7 +262,7 @@ func (h *Handler) handleCompletionStream(
 			"provider", provider.Name(),
 			"request_id", meta.RequestID,
 		)
-		h.costWorker.RecordError(meta, http.StatusBadGateway, err.Error())
+		h.costWorker.RecordError(meta, http.StatusBadGateway, err.Error()) //nolint:contextcheck // intentional fire-and-forget after response
 		writeError(w, http.StatusBadGateway, "upstream provider error: "+err.Error(), "upstream_error")
 		return
 	}
@@ -271,7 +271,7 @@ func (h *Handler) handleCompletionStream(
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		interceptor.Close()
+		_ = interceptor.Close()
 		writeError(w, http.StatusInternalServerError, "streaming not supported", "server_error")
 		return
 	}
@@ -332,5 +332,5 @@ func (h *Handler) handleCompletionStream(
 		)
 	}
 
-	h.costWorker.RecordStream(meta, interceptor, http.StatusOK)
+	h.costWorker.RecordStream(meta, interceptor, http.StatusOK) //nolint:contextcheck // intentional fire-and-forget after response
 }

@@ -1,0 +1,55 @@
+version: "2"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/yourusername/llmgopher
+
+linters:
+  default: none
+  enable:
+    # Correctness
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # Style / quality
+    - misspell
+    - unconvert
+    - unparam
+    - nilerr
+    - bodyclose
+    - contextcheck
+    - noctx
+    - exhaustive
+    - predeclared
+    - testifylint
+
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: true
+
+  exclusions:
+    # Third-party code vendored under ui/
+    paths:
+      - ui/node_modules
+
+    rules:
+      # defer Close() / Rollback() error returns are not actionable in cleanup paths.
+      - linters: [errcheck]
+        source: "defer .+\\.(Close|Rollback)\\("
+
+      # Writing to HTTP response writers after headers are sent, and to SSE pipe writers
+      # where errors indicate client disconnection — neither is actionable.
+      - linters: [errcheck]
+        source: "json\\.NewEncoder\\(.+\\)\\.Encode\\(|fmt\\.Fprint"
+
+      # httptest.NewRequest in tests doesn't need a context — it's a test-only convenience wrapper.
+      - linters: [noctx]
+        path: "_test\\.go"

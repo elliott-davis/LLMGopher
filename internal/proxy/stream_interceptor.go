@@ -61,8 +61,8 @@ func (si *StreamInterceptor) Read(p []byte) (int, error) {
 // Close closes the interceptor and the underlying source.
 func (si *StreamInterceptor) Close() error {
 	si.once.Do(func() {
-		si.src.Close()
-		si.pr.Close()
+		_ = si.src.Close()
+		_ = si.pr.Close()
 	})
 	return nil
 }
@@ -89,7 +89,7 @@ func (si *StreamInterceptor) process() {
 		line := scanner.Text()
 
 		// Forward every line (including blank lines that delimit SSE events).
-		si.pw.Write([]byte(line + "\n"))
+		_, _ = si.pw.Write([]byte(line + "\n"))
 
 		if !strings.HasPrefix(line, "data: ") {
 			continue

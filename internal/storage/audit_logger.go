@@ -70,7 +70,7 @@ func (al *PgAuditLogger) drain() {
 }
 
 func (al *PgAuditLogger) write(entry *llm.AuditEntry) {
-	_, err := al.db.Exec(auditInsertSQL,
+	_, err := al.db.ExecContext(context.Background(), auditInsertSQL,
 		entry.RequestID,
 		entry.APIKeyID,
 		entry.Model,
