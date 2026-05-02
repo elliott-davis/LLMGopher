@@ -1,0 +1,21 @@
+# Copy to docker-compose.override.yml (gitignored) for optional local features.
+# Compose merges this file automatically when present.
+
+services:
+  # Vertex AI: save service account JSON as ./secrets/gcp-sa.json, then in .env set:
+  # LLMGOPHER_VERTEX_PROJECT_ID=...
+  # GOOGLE_APPLICATION_CREDENTIALS=/secrets/gcp-sa.json
+  gateway:
+    volumes:
+      - ./secrets/gcp-sa.json:/secrets/gcp-sa.json:ro
+
+  # UI hot reload: only when Docker can bind-mount your repo path (e.g. native Linux Docker).
+  # Remote devcontainers / Docker Desktop path sharing often cannot mount the workspace; use
+  # default compose (rebuild UI after edits) or run `npm run dev` in ./ui on the host.
+  # ui:
+  #   environment:
+  #     WATCHPACK_POLLING: "true"
+  #     WATCHPACK_POLLING_INTERVAL: "1000"
+  #   volumes:
+  #     - ./ui:/app
+  #     - /app/node_modules

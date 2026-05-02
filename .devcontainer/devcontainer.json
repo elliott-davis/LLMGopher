@@ -1,6 +1,20 @@
 {
   "name": "LLMGopher",
   "image": "mcr.microsoft.com/devcontainers/go:1.25-bookworm",
+  "initializeCommand": "docker network inspect llmgopher >/dev/null 2>&1 || docker network create llmgopher",
+  "runArgs": ["--network=llmgopher"],
+  "forwardPorts": [
+    "gateway:8080",
+    "ui:3000",
+    "postgres:5432",
+    "redis:6379"
+  ],
+  "portsAttributes": {
+    "8080": { "label": "Gateway API", "onAutoForward": "notify" },
+    "3000": { "label": "Control Plane UI", "onAutoForward": "notify" },
+    "5432": { "label": "Postgres", "onAutoForward": "silent" },
+    "6379": { "label": "Redis", "onAutoForward": "silent" }
+  },
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
     "ghcr.io/devcontainers/features/node:1": {

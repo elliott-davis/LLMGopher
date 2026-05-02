@@ -1,3 +1,11 @@
+networks:
+  default:
+    # Shared with .devcontainer/devcontainer.json (runArgs --network=llmgopher).
+    # Pre-created by Makefile targets and initializeCommand so compose and the dev container
+    # attach to the same network (needed for editor port forwarding of gateway/ui).
+    name: llmgopher
+    external: true
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -39,8 +47,8 @@ services:
       LLMGOPHER_API_KEYS: "sk-test-key-1:key-001,sk-test-key-2:key-002"
       LLMGOPHER_OPENAI_API_KEY: "sk-local-fake-openai-key-000000000000"
       LLMGOPHER_ANTHROPIC_API_KEY: "sk-ant-local-fake-anthropic-key-0000"
-    volumes:
-      - ./gen-lang-client-0088272616-f4778912caae.json:/secrets/gcp-sa.json:ro
+    # Optional: mount a GCP service account JSON for Vertex — use docker-compose.override.yml
+    # (see docker-compose.override.example.yml).
     env_file:
       - path: .env
         required: false
@@ -56,12 +64,7 @@ services:
       dockerfile: Dockerfile.dev
     ports:
       - "3000:3000"
-    environment:
-      WATCHPACK_POLLING: "true"
-      WATCHPACK_POLLING_INTERVAL: "1000"
-    volumes:
-      - ./ui:/app
-      - /app/node_modules
+    # Source is baked in at build time; use docker-compose.override.yml for bind-mount hot reload.
     depends_on:
       - gateway
 

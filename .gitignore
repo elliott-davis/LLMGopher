@@ -1,4 +1,8 @@
 gen-lang-client-0088272616-f4778912caae.json
+.claude/settings.local.json
+secrets/
+docker-compose.override.yml
+docker-compose.override.yaml
 gateway
 .spec-validation/
 

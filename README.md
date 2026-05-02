@@ -53,6 +53,11 @@ make dev-logs
 make dev-down
 ```
 
+The Control Plane UI is at http://localhost:3000. The UI image bakes in `ui/` at build time; after you change
+front-end code, run `make dev-restart` (or `docker compose up --build -d ui`) to rebuild. For optional
+bind-mounted hot reload when your Docker install can share the repo path, see
+`docker-compose.override.example.yml`.
+
 To use real API keys, copy `.env.example` to `.env` and fill in your keys:
 
 ```bash
@@ -177,16 +182,10 @@ Local (no Docker):
 
 export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your-service-account.json"
 # then start gateway as usual (e.g. make run or go run ./cmd/gateway)
-Docker Compose:
-Mount the key and set the env var in the gateway service, e.g.:
-
-# docker-compose.yaml (snippet for gateway service)
-gateway:
-  environment:
-    GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-sa.json
-  volumes:
-    - ./path/to/your-service-account.json:/secrets/gcp-sa.json:ro
-(Use a path that exists on your machine for ./path/to/...; avoid committing the file.)
+Docker Compose (recommended): copy `docker-compose.override.example.yml` to
+`docker-compose.override.yml`, save your key as `./secrets/gcp-sa.json` (gitignored), and
+in `.env` set `LLMGOPHER_VERTEX_PROJECT_ID` and `GOOGLE_APPLICATION_CREDENTIALS=/secrets/gcp-sa.json`.
+Compose merges overrides automatically; do not commit the key or override file.
 
 After that, set LLMGOPHER_VERTEX_PROJECT_ID (and optionally LLMGOPHER_VERTEX_REGION) as you already do; the gateway will use the service account for Vertex and you can keep using your existing curl with vertex/gemini-2.5-flash
 

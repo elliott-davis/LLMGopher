@@ -1,6 +1,8 @@
 APP_NAME     := llmgopher
 IMAGE        := $(APP_NAME):local
 GATEWAY_PORT := 8080
+# Must match docker-compose.yaml networks.default.name (external network).
+COMPOSE_NETWORK := llmgopher
 SPEC_KIT_VERSION ?= v0.8.1
 SPEC_KIT        := uvx --from git+https://github.com/github/spec-kit.git@$(SPEC_KIT_VERSION) specify
 
@@ -9,7 +11,7 @@ CLUSTER_NAME := $(APP_NAME)
 KIND_CONFIG  := k8s/local/kind-config.yaml
 K8S_DIR      := k8s/local
 
-.PHONY: help dev dev-down dev-logs dev-ui-logs dev-ps dev-restart \
+.PHONY: help ensure-compose-network dev dev-down dev-logs dev-ui-logs dev-ps dev-restart \
         build run test test-v spec-validate spec-validate-strict \
         spec-kit-bootstrap spec-kit-version \
         docker-build \
@@ -24,7 +26,11 @@ help: ## Show this help
 # Local development (docker-compose)
 # ---------------------------------------------------------------------------
 
-dev: ## Start all services via docker-compose (build + up)
+ensure-compose-network: ## Create the compose external network if missing (devcontainer + compose share it)
+	@docker network inspect $(COMPOSE_NETWORK) >/dev/null 2>&1 || \
+		docker network create $(COMPOSE_NETWORK)
+
+dev: ensure-compose-network ## Start all services via docker-compose (build + up)
 	docker compose up --build -d postgres redis gateway ui
 	@echo ""
 	@echo "============================================"
@@ -48,7 +54,7 @@ dev-ui-logs: ## Tail logs from the UI service
 dev-ps: ## Show running service status
 	docker compose ps
 
-dev-restart: ## Rebuild and restart gateway + UI
+dev-restart: ensure-compose-network ## Rebuild and restart gateway + UI
 	docker compose up --build -d gateway ui
 
 # ---------------------------------------------------------------------------
