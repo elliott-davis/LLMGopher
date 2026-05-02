@@ -64,6 +64,8 @@ services:
       dockerfile: Dockerfile.dev
     ports:
       - "3000:3000"
+    environment:
+      LLMGOPHER_UI_ADMIN_API_KEY: "${LLMGOPHER_UI_ADMIN_API_KEY:-sk-test-key-1}"
     # Source is baked in at build time; use docker-compose.override.yml for bind-mount hot reload.
     depends_on:
       - gateway

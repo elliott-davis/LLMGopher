@@ -17,7 +17,7 @@ import {
   setAPIKeyActiveState,
   waitForAPIKeyDeletionSync,
 } from "@/lib/actions";
-import { APIKey, Model } from "@/lib/types";
+import { APIKey, APIKeyBudgetState, Model } from "@/lib/types";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -35,15 +35,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import EditAPIKeyModal from "@/components/EditAPIKeyModal";
+import APIKeyBudgetModal from "@/components/APIKeyBudgetModal";
 
 type APIKeyRowActionsProps = {
   apiKey: APIKey;
   models: Model[];
+  budgetState: APIKeyBudgetState;
 };
 
-export default function APIKeyRowActions({ apiKey, models }: APIKeyRowActionsProps) {
+export default function APIKeyRowActions({ apiKey, models, budgetState }: APIKeyRowActionsProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
+  const [budgetOpen, setBudgetOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isWaitingForSync, setIsWaitingForSync] = useState(false);
   const [isToggling, startToggleTransition] = useTransition();
@@ -110,41 +113,53 @@ export default function APIKeyRowActions({ apiKey, models }: APIKeyRowActionsPro
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={<Button variant="ghost" size="icon" disabled={isToggling} />}
-        >
-          <MoreHorizontal className="size-4" aria-hidden />
-          <span className="sr-only">Open actions</span>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setEditOpen(true)}>
-            <Pencil className="mr-2 size-4" />
-            Edit
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleActiveToggle} disabled={isToggling}>
-            {apiKey.is_active ? (
-              <PowerOff className="mr-2 size-4" />
-            ) : (
-              <Power className="mr-2 size-4" />
-            )}
-            {apiKey.is_active ? "Deactivate" : "Reactivate"}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => setDeleteOpen(true)}
+      <div className="flex items-center gap-1">
+        <Button size="sm" variant="outline" onClick={() => setBudgetOpen(true)}>
+          Manage budget
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<Button variant="ghost" size="icon" disabled={isToggling} />}
           >
-            <Trash2 className="mr-2 size-4" />
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <MoreHorizontal className="size-4" aria-hidden />
+            <span className="sr-only">Open actions</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setEditOpen(true)}>
+              <Pencil className="mr-2 size-4" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleActiveToggle} disabled={isToggling}>
+              {apiKey.is_active ? (
+                <PowerOff className="mr-2 size-4" />
+              ) : (
+                <Power className="mr-2 size-4" />
+              )}
+              {apiKey.is_active ? "Deactivate" : "Reactivate"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="mr-2 size-4" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       <EditAPIKeyModal
         apiKey={apiKey}
         models={models}
         open={editOpen}
         onOpenChange={setEditOpen}
+      />
+      <APIKeyBudgetModal
+        apiKeyID={apiKey.id}
+        apiKeyName={apiKey.name}
+        initialState={budgetState}
+        open={budgetOpen}
+        onOpenChange={setBudgetOpen}
       />
 
       <AlertDialog

@@ -6,8 +6,12 @@ vi.mock("next/cache", () => ({
 
 import {
   createAPIKey,
+  deleteAPIKeyBudget,
   deleteAPIKey,
+  fetchAPIKeyBudget,
+  resetAPIKeyBudget,
   setAPIKeyActiveState,
+  upsertAPIKeyBudget,
   updateAPIKey,
   waitForAPIKeyDeletionSync,
 } from "@/lib/actions";
@@ -155,5 +159,108 @@ describe("API key lifecycle actions", () => {
     const synced = await waitForAPIKeyDeletionSync("key-1", 1, 1);
 
     expect(synced).toBe(false);
+  });
+});
+
+describe("API key budget actions", () => {
+  beforeEach(() => {
+    vi.mocked(revalidatePath).mockClear();
+    vi.stubGlobal("fetch", vi.fn());
+    process.env.LLMGOPHER_UI_ADMIN_API_KEY = "sk-test-key-1";
+  });
+
+  it("fetches configured budget state and maps 404 to unbudgeted", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            api_key_id: "key-1",
+            budget_usd: 100,
+            spent_usd: 10,
+            remaining_usd: 90,
+          }),
+          { status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    await expect(fetchAPIKeyBudget("key-1")).resolves.toMatchObject({
+      status: "configured",
+    });
+    await expect(fetchAPIKeyBudget("key-2")).resolves.toEqual({ status: "unbudgeted" });
+    expect(fetch).toHaveBeenCalledWith(
+      "http://gateway:8080/v1/admin/keys/key-1/budget",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer sk-test-key-1",
+        }),
+      })
+    );
+  });
+
+  it("returns unavailable state for missing token and auth failures", async () => {
+    delete process.env.LLMGOPHER_UI_ADMIN_API_KEY;
+    await expect(fetchAPIKeyBudget("key-1")).resolves.toEqual(
+      expect.objectContaining({ status: "unavailable" })
+    );
+
+    process.env.LLMGOPHER_UI_ADMIN_API_KEY = "sk-test-key-1";
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 401 }));
+    await expect(fetchAPIKeyBudget("key-1")).resolves.toEqual(
+      expect.objectContaining({ status: "unavailable" })
+    );
+  });
+
+  it("upserts, resets, and deletes budget with revalidation", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            api_key_id: "key-1",
+            budget_usd: 100,
+            spent_usd: 20,
+            remaining_usd: 80,
+            alert_threshold_pct: 80,
+          }),
+          { status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            api_key_id: "key-1",
+            budget_usd: 100,
+            spent_usd: 0,
+            remaining_usd: 100,
+          }),
+          { status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const form = new FormData();
+    form.set("budget_usd", "100");
+    form.set("alert_threshold_pct", "80");
+
+    await expect(upsertAPIKeyBudget("key-1", form)).resolves.toMatchObject({
+      api_key_id: "key-1",
+      budget_usd: 100,
+    });
+    await expect(resetAPIKeyBudget("key-1")).resolves.toMatchObject({
+      spent_usd: 0,
+    });
+    await expect(deleteAPIKeyBudget("key-1")).resolves.toBeUndefined();
+    expect(revalidatePath).toHaveBeenCalledWith("/keys");
+  });
+
+  it("surfaces gateway envelope messages for budget mutations", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: "budget invalid" } }), {
+        status: 400,
+      })
+    );
+    const form = new FormData();
+    form.set("budget_usd", "100");
+    await expect(upsertAPIKeyBudget("key-1", form)).rejects.toThrow("budget invalid");
   });
 });

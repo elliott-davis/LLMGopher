@@ -1,4 +1,5 @@
 import CreateAPIKeyModal from "@/components/CreateAPIKeyModal";
+import APIKeyBudgetStatus from "@/components/APIKeyBudgetStatus";
 import APIKeyRowActions from "@/components/APIKeyRowActions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -10,7 +11,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { describeModelAllowlist } from "@/lib/key-lifecycle";
-import { APIKey, Model } from "@/lib/types";
+import { fetchAPIKeyBudget } from "@/lib/actions";
+import { APIKey, APIKeyBudgetState, Model } from "@/lib/types";
 
 const KEYS_ENDPOINT = "http://gateway:8080/v1/admin/keys";
 const MODELS_ENDPOINT = "http://gateway:8080/v1/admin/models";
@@ -41,6 +43,16 @@ async function fetchModels(): Promise<{ models: Model[]; unavailable: boolean }>
   } catch {
     return { models: [], unavailable: true };
   }
+}
+
+async function fetchBudgetStates(keys: APIKey[]): Promise<Record<string, APIKeyBudgetState>> {
+  const entries = await Promise.all(
+    keys.map(async (key) => {
+      const state = await fetchAPIKeyBudget(key.id);
+      return [key.id, state] as const;
+    })
+  );
+  return Object.fromEntries(entries);
 }
 
 function formatDate(value: string | null | undefined): string {
@@ -76,6 +88,7 @@ export default async function KeysPage() {
     { keys, unavailable },
     { models, unavailable: modelsUnavailable },
   ] = await Promise.all([fetchKeys(), fetchModels()]);
+  const budgetsByKey = unavailable ? {} : await fetchBudgetStates(keys);
 
   return (
     <div className="mx-auto w-full max-w-7xl">
@@ -109,6 +122,7 @@ export default async function KeysPage() {
                 <TableHead>Expiration</TableHead>
                 <TableHead>Models</TableHead>
                 <TableHead>Metadata</TableHead>
+                <TableHead>Budget</TableHead>
                 <TableHead>Updated</TableHead>
                 <TableHead className="w-[1%]">Actions</TableHead>
               </TableRow>
@@ -116,18 +130,19 @@ export default async function KeysPage() {
             <TableBody>
               {unavailable ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-muted-foreground">
+                  <TableCell colSpan={10} className="text-muted-foreground">
                     Backend unavailable. Try refreshing in a moment.
                   </TableCell>
                 </TableRow>
               ) : keys.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-muted-foreground">
+                  <TableCell colSpan={10} className="text-muted-foreground">
                     No API keys are currently loaded.
                   </TableCell>
                 </TableRow>
               ) : (
                 keys.map((key) => (
+                  // Budget state is loaded server-side and passed into status + action controls.
                   <TableRow key={key.id}>
                     <TableCell className="font-medium">{key.name}</TableCell>
                     <TableCell className="font-mono text-xs">
@@ -157,10 +172,29 @@ export default async function KeysPage() {
                       {summarizeMetadata(key.metadata)}
                     </TableCell>
                     <TableCell>
+                      <APIKeyBudgetStatus
+                        state={
+                          budgetsByKey[key.id] ?? {
+                            status: "unavailable",
+                            message: "Budget state unavailable",
+                          }
+                        }
+                      />
+                    </TableCell>
+                    <TableCell>
                       {new Date(key.updated_at).toLocaleString()}
                     </TableCell>
                     <TableCell>
-                      <APIKeyRowActions apiKey={key} models={models} />
+                      <APIKeyRowActions
+                        apiKey={key}
+                        models={models}
+                        budgetState={
+                          budgetsByKey[key.id] ?? {
+                            status: "unavailable",
+                            message: "Budget state unavailable",
+                          }
+                        }
+                      />
                     </TableCell>
                   </TableRow>
                 ))

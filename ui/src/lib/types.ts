@@ -11,6 +11,37 @@ export interface APIKey {
   updated_at: string;
 }
 
+export type BudgetDuration = "daily" | "weekly" | "monthly";
+
+export interface APIKeyBudget {
+  api_key_id: string;
+  budget_usd: number;
+  spent_usd: number;
+  remaining_usd: number;
+  alert_threshold_pct?: number | null;
+  budget_duration?: BudgetDuration | null;
+  budget_reset_at?: string | null;
+}
+
+export type APIKeyBudgetState =
+  | { status: "configured"; budget: APIKeyBudget }
+  | { status: "unbudgeted" }
+  | { status: "unavailable"; message: string };
+
+export interface APIKeyBudgetFormValues {
+  budget_usd: number;
+  alert_threshold_pct?: number;
+  budget_duration?: BudgetDuration;
+  budget_reset_at?: string;
+}
+
+export type BudgetStatusIndicator =
+  | "unbudgeted"
+  | "within_budget"
+  | "near_threshold"
+  | "exhausted"
+  | "unavailable";
+
 export interface Model {
   id: string;
   provider_id: string;
