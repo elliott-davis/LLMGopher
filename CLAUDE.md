@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+<!-- SPECKIT START -->
+Current plan: `specs/30-ui-key-lifecycle/plan.md`
+<!-- SPECKIT END -->
+
 ## What This Is
 
 LLMGopher is an OpenAI-compatible API gateway written in Go that proxies requests to multiple LLM providers (OpenAI, Anthropic, Google Vertex AI). It handles auth, rate limiting, guardrail checks, cost tracking, and audit logging, with PostgreSQL for persistence and optional Redis for rate limiting.
