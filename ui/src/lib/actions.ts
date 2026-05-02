@@ -2,6 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 
+import {
+  extractGatewayErrorMessage,
+  parseAPIKeyFormValues,
+} from "@/lib/action-helpers";
+import { GatewayErrorEnvelope, Model } from "@/lib/types";
+
 const GATEWAY_BASE = "http://gateway:8080";
 const CREATE_MODEL_ENDPOINT = `${GATEWAY_BASE}/v1/admin/models`;
 const GET_MODELS_ENDPOINT = `${GATEWAY_BASE}/v1/admin/models`;
@@ -210,24 +216,6 @@ export async function waitForProviderCreationSync(
   return false;
 }
 
-function extractGatewayErrorMessage(payload: unknown, fallback: string): string {
-  if (typeof payload !== "object" || payload === null) {
-    return fallback;
-  }
-
-  const maybeError = (payload as { error?: unknown }).error;
-  if (typeof maybeError === "string" && maybeError.trim()) {
-    return maybeError;
-  }
-
-  const maybeMessage = (payload as { message?: unknown }).message;
-  if (typeof maybeMessage === "string" && maybeMessage.trim()) {
-    return maybeMessage;
-  }
-
-  return fallback;
-}
-
 export async function updateProvider(id: string, formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const baseURL = String(formData.get("base_url") ?? "").trim();
@@ -346,27 +334,39 @@ type CreateAPIKeyResponse = {
   api_key: string;
 };
 
-export async function createAPIKey(formData: FormData): Promise<string> {
-  const name = String(formData.get("name") ?? "").trim();
-  const rateLimitRPS = Number(String(formData.get("rate_limit_rps") ?? "").trim());
+async function readGatewayError(response: Response, fallback: string): Promise<string> {
+  try {
+    const errorPayload = (await response.json()) as GatewayErrorEnvelope;
+    return extractGatewayErrorMessage(errorPayload, fallback);
+  } catch {
+    return fallback;
+  }
+}
 
-  if (!name || !Number.isFinite(rateLimitRPS) || rateLimitRPS < 0) {
-    throw new Error("Invalid API key form data");
+export async function fetchModelsForKeyForms(): Promise<Model[]> {
+  const response = await fetch(GET_MODELS_ENDPOINT, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    return [];
   }
 
+  return response.json();
+}
+
+export async function createAPIKey(formData: FormData): Promise<string> {
+  const values = parseAPIKeyFormValues(formData);
   const response = await fetch(CREATE_API_KEY_ENDPOINT, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      name,
-      rate_limit_rps: rateLimitRPS,
-    }),
+    body: JSON.stringify(values),
   });
 
   if (!response.ok) {
-    throw new Error("Failed to create API key");
+    throw new Error(await readGatewayError(response, "Failed to create API key"));
   }
 
   const payload = (await response.json()) as CreateAPIKeyResponse;
@@ -376,4 +376,95 @@ export async function createAPIKey(formData: FormData): Promise<string> {
 
   revalidatePath("/keys");
   return payload.api_key;
+}
+
+export async function updateAPIKey(id: string, formData: FormData) {
+  if (!id) {
+    throw new Error("API key id is required");
+  }
+
+  const values = parseAPIKeyFormValues(formData);
+  const response = await fetch(`${CREATE_API_KEY_ENDPOINT}/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(values),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readGatewayError(response, "Failed to update API key"));
+  }
+
+  revalidatePath("/keys");
+}
+
+export async function setAPIKeyActiveState(id: string, isActive: boolean) {
+  if (!id) {
+    throw new Error("API key id is required");
+  }
+
+  const response = await fetch(`${CREATE_API_KEY_ENDPOINT}/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ is_active: isActive }),
+  });
+
+  if (!response.ok) {
+    const action = isActive ? "reactivate" : "deactivate";
+    throw new Error(await readGatewayError(response, `Failed to ${action} API key`));
+  }
+
+  revalidatePath("/keys");
+}
+
+export async function deleteAPIKey(id: string) {
+  if (!id) {
+    throw new Error("API key id is required");
+  }
+
+  const response = await fetch(`${CREATE_API_KEY_ENDPOINT}/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error(await readGatewayError(response, "Failed to delete API key"));
+  }
+
+  revalidatePath("/keys");
+}
+
+export async function waitForAPIKeyDeletionSync(
+  id: string,
+  timeoutMs = 30000,
+  intervalMs = 1000
+): Promise<boolean> {
+  if (!id) {
+    throw new Error("API key id is required");
+  }
+  if (timeoutMs <= 0 || intervalMs <= 0) {
+    throw new Error("Invalid polling configuration");
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const response = await fetch(CREATE_API_KEY_ENDPOINT, {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error("Failed to fetch API keys while waiting for deletion sync");
+    }
+
+    const keys = (await response.json()) as { id: string }[];
+    if (!keys.some((key) => key.id === id)) {
+      revalidatePath("/keys");
+      return true;
+    }
+
+    await sleep(intervalMs);
+  }
+
+  return false;
 }

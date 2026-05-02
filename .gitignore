@@ -5,6 +5,19 @@ docker-compose.override.yml
 docker-compose.override.yaml
 gateway
 .spec-validation/
+*.exe
+*.test
+*.out
+vendor/
+bin/
+*.log
+.env*
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
 
 # Spec Kit generated scaffolding. Keep project-specific metadata and
 # constitution files tracked; regenerate these assets with `make spec-kit-bootstrap`.

@@ -42,6 +42,8 @@ Expected result: the key appears with active status, rate limit, expiration stat
 
 Expected result: the updated values appear after the gateway synchronization window.
 
+Note: No key lifecycle capability from this feature remains API-only after implementation. Key rotation remains out of scope because existing keys cannot reveal or regenerate plaintext key material.
+
 ### 3. Deactivate and Reactivate
 
 1. Deactivate an active test key.
@@ -51,6 +53,8 @@ Expected result: the updated values appear after the gateway synchronization win
 
 Expected result: no new key is created and the same key ID remains visible.
 
+Cache sync expectation: the UI refreshes immediately and again after short delays to account for the gateway state cache window.
+
 ### 4. Delete a Test Key
 
 1. Choose a non-production test key.
@@ -59,6 +63,8 @@ Expected result: no new key is created and the same key ID remains visible.
 4. Wait for the inventory refresh.
 
 Expected result: the key is removed from the inventory and the UI explains any synchronization delay.
+
+Irreversible-action criteria: delete must always show a confirmation naming the key and explaining permanence before sending the request.
 
 ### 5. Validate Error Handling
 
@@ -72,6 +78,7 @@ Expected result: the UI preserves form state, explains the failed action, and do
 
 ```bash
 cd ui
+npm test
 npm run lint
 npm run build
 ```
@@ -85,3 +92,10 @@ go test ./internal/api/... -run 'Test.*APIKey' -v
 ## Rollback Notes
 
 This feature is UI-only when implemented as planned. Reverting the UI changes removes lifecycle controls from the admin UI but does not change gateway key enforcement or existing admin API behavior.
+
+## Implementation Verification Notes
+
+- `npm test` passed with the Vitest UI harness.
+- `npm run lint` passed with one existing `Sidebar.tsx` image warning.
+- `npm run build` passed with the same existing warning.
+- Docker Compose smoke checks were not run in this pass, so manual checks 1-5 remain the highest-value runtime validation before release.

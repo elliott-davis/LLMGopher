@@ -147,3 +147,11 @@ UI obligations:
 ## API-Only Exceptions
 
 No key lifecycle capability from this feature remains intentionally API-only. Key rotation that preserves the same key ID remains out of scope because the backend does not persist plaintext keys and the feature spec excludes it.
+
+## Implemented UI Behavior Notes
+
+- The key inventory fetches keys and models with `cache: "no-store"` so lifecycle fields and model labels are server-authoritative.
+- Create and edit forms submit `expires_at`, `metadata`, and `allowed_models`; empty allowlists are rendered and submitted as unrestricted access.
+- Stale allowed model identifiers are preserved in the edit UI and table labels rather than silently removed.
+- Deactivate/reactivate use `PUT /v1/admin/keys/{id}` with `is_active` only, preserving the same key ID.
+- Delete uses a confirmation dialog before `DELETE /v1/admin/keys/{id}` and waits for refreshed inventory state before reporting sync completion.

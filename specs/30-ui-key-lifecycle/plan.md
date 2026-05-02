@@ -106,3 +106,9 @@ See `data-model.md`, `contracts/ui_key_lifecycle_contract.md`, and `quickstart.m
 - Run focused UI tests if available after implementation; if a test harness is absent, document the gap and rely on lint/build plus quickstart smoke verification.
 - Use `make dev` or the existing Docker Compose stack to smoke test create, edit, deactivate, reactivate, delete, gateway-unavailable, and validation-error flows.
 - Run `go test ./internal/api/... -run 'Test.*APIKey' -v` only if backend contract changes become necessary.
+
+## Implementation Verification Notes
+
+- Added a Vitest, React Testing Library, jest-dom, and jsdom harness under `ui/` rather than relying only on lint/build.
+- `npm test`, `npm run lint`, and `npm run build` passed after implementation.
+- Backend key contracts were not changed, so the focused Go API key test command was not required.

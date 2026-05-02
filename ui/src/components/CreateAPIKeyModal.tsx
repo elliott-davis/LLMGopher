@@ -1,9 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { createAPIKey } from "@/lib/actions";
+import { Model } from "@/lib/types";
+import APIKeyLifecycleForm from "@/components/APIKeyLifecycleForm";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,11 +20,22 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export default function CreateAPIKeyModal() {
+type CreateAPIKeyModalProps = {
+  models: Model[];
+};
+
+export default function CreateAPIKeyModal({ models }: CreateAPIKeyModalProps) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [createdKey, setCreatedKey] = useState<string | null>(null);
+
+  const refreshKeysSoon = () => {
+    router.refresh();
+    window.setTimeout(() => router.refresh(), 1200);
+    window.setTimeout(() => router.refresh(), 3000);
+  };
 
   const handleSubmit = (formData: FormData) => {
     setErrorMessage(null);
@@ -32,7 +46,10 @@ export default function CreateAPIKeyModal() {
         try {
           const key = await createAPIKey(formData);
           setCreatedKey(key);
-          toast.success("API key created");
+          toast.success("API key created", {
+            description: "Copy the generated key before closing this dialog.",
+          });
+          refreshKeysSoon();
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to create API key";
           setErrorMessage(message);
@@ -63,22 +80,11 @@ export default function CreateAPIKeyModal() {
         </DialogHeader>
 
         <form action={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="api-key-name">Name</Label>
-            <Input id="api-key-name" name="name" required placeholder="Production Service Key" />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="api-key-rate-limit">Rate Limit (RPS)</Label>
-            <Input
-              id="api-key-rate-limit"
-              name="rate_limit_rps"
-              type="number"
-              min={0}
-              defaultValue={100}
-              required
-            />
-          </div>
+          <APIKeyLifecycleForm
+            idPrefix="api-key"
+            models={models}
+            disabled={isPending || Boolean(createdKey)}
+          />
 
           {createdKey ? (
             <div className="space-y-2 rounded-md border bg-muted/30 p-3">
@@ -88,7 +94,7 @@ export default function CreateAPIKeyModal() {
           ) : null}
 
           <DialogFooter>
-            <Button type="submit" disabled={isPending}>
+            <Button type="submit" disabled={isPending || Boolean(createdKey)}>
               {isPending ? "Saving..." : "Create API Key"}
             </Button>
           </DialogFooter>

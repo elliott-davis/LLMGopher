@@ -1,0 +1,13 @@
+.git/
+Dockerfile*
+.dockerignore
+*.log*
+.env*
+coverage/
+node_modules/
+ui/node_modules/
+ui/.next/
+ui/out/
+bin/
+*.test
+*.out
