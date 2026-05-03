@@ -83,3 +83,84 @@ export interface Provider {
   created_at?: string;
   updated_at?: string;
 }
+
+export type UsageGroupBy = "model" | "provider" | "api_key";
+export type AuditStatusFilter = "success" | "error";
+export type AnalyticsStateKind =
+  | "ready"
+  | "empty"
+  | "unavailable"
+  | "invalid-filter";
+
+export interface UsageSummaryRow {
+  group: string;
+  requests: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  errors: number;
+  avg_latency_ms: number;
+}
+
+export interface UsageSummaryResponse {
+  group_by: UsageGroupBy;
+  from: string;
+  to: string;
+  data: UsageSummaryRow[];
+}
+
+export interface DailyUsagePoint {
+  date: string;
+  requests: number;
+  total_tokens: number;
+  cost_usd: number;
+}
+
+export interface DailyUsageResponse {
+  from: string;
+  to: string;
+  data: DailyUsagePoint[];
+}
+
+export interface AuditRecord {
+  id: number;
+  request_id: string;
+  api_key_id: string;
+  model: string;
+  provider: string;
+  prompt_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  status_code: number;
+  latency_ms: number;
+  streaming: boolean;
+  error_message: string;
+  created_at: string;
+}
+
+export interface AuditResponse {
+  data: AuditRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AnalyticsFilters {
+  from?: string;
+  to?: string;
+  group_by: UsageGroupBy;
+  api_key_id?: string;
+  model?: string;
+  provider?: string;
+  status?: AuditStatusFilter;
+  limit: number;
+  offset: number;
+}
+
+export interface AnalyticsResult<T> {
+  state: AnalyticsStateKind;
+  data: T;
+  message?: string;
+}

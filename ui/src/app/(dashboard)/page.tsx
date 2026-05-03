@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { KeyRound, GitBranch, Box } from "lucide-react";
+import { KeyRound, GitBranch, Box, ChartNoAxesCombined } from "lucide-react";
 
 const cards = [
   {
@@ -21,6 +21,13 @@ const cards = [
     description:
       "Create provider instances and use them from the Add Model workflow.",
     icon: Box,
+  },
+  {
+    title: "Usage & Audit",
+    href: "/usage",
+    description:
+      "Inspect grouped usage, daily trends, and paginated audit records.",
+    icon: ChartNoAxesCombined,
   },
 ] as const;
 

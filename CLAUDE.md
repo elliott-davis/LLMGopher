@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 <!-- SPECKIT START -->
-Current plan: `specs/31-ui-key-budgets/plan.md`
+Current plan: `specs/32-ui-usage-audit-dashboard/plan.md`
 <!-- SPECKIT END -->
 
 ## What This Is

@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Box,
   GitBranch,
+  ChartNoAxesCombined,
 } from "lucide-react";
 
 export interface NavItem {
@@ -17,4 +18,5 @@ export const sidebarNavItems: NavItem[] = [
   { name: "API Keys", href: "/keys", icon: KeyRound },
   { name: "Models & Routing", href: "/models", icon: GitBranch },
   { name: "Providers", href: "/providers", icon: Box },
+  { name: "Usage & Audit", href: "/usage", icon: ChartNoAxesCombined },
 ];
