@@ -28,15 +28,22 @@ const apiKey: APIKey = {
 
 describe("APIKeyRowActions", () => {
   it("renders a row actions trigger without raw key material", () => {
-    render(<APIKeyRowActions apiKey={apiKey} models={[]} />);
+    render(
+      <APIKeyRowActions apiKey={apiKey} models={[]} budgetState={{ status: "unbudgeted" }} />
+    );
 
     expect(screen.getByRole("button", { name: "Open actions" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Manage budget" })).toBeInTheDocument();
     expect(screen.queryByText(/^sk-/)).not.toBeInTheDocument();
   });
 
   it("keeps inactive rows using the same action entry point", () => {
     render(
-      <APIKeyRowActions apiKey={{ ...apiKey, is_active: false }} models={[]} />
+      <APIKeyRowActions
+        apiKey={{ ...apiKey, is_active: false }}
+        models={[]}
+        budgetState={{ status: "unavailable", message: "auth required" }}
+      />
     );
 
     expect(screen.getByRole("button", { name: "Open actions" })).toBeEnabled();

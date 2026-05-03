@@ -13,10 +13,13 @@ vi.mock("@/lib/actions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/actions")>()),
   createAPIKey: vi.fn(),
   deleteAPIKey: vi.fn(),
+  fetchAPIKeyBudget: vi.fn(),
   setAPIKeyActiveState: vi.fn(),
   updateAPIKey: vi.fn(),
   waitForAPIKeyDeletionSync: vi.fn(),
 }));
+
+import { fetchAPIKeyBudget } from "@/lib/actions";
 
 describe("KeysPage", () => {
   beforeEach(() => {
@@ -45,12 +48,15 @@ describe("KeysPage", () => {
         )
       )
       .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+    vi.mocked(fetchAPIKeyBudget).mockResolvedValue({ status: "unbudgeted" });
 
     render(await KeysPage());
 
     expect(screen.getByText("Production")).toBeInTheDocument();
     expect(screen.getByText("legacy-model (stale)")).toBeInTheDocument();
     expect(screen.getByText("owner: platform")).toBeInTheDocument();
+    expect(screen.getByText("No budget set")).toBeInTheDocument();
+    expect(fetchAPIKeyBudget).toHaveBeenCalledWith("key-1");
   });
 
   it("uses the expanded column span for unavailable inventory", async () => {
@@ -62,6 +68,6 @@ describe("KeysPage", () => {
 
     expect(
       screen.getByText("Backend unavailable. Try refreshing in a moment.")
-    ).toHaveAttribute("colspan", "9");
+    ).toHaveAttribute("colspan", "10");
   });
 });

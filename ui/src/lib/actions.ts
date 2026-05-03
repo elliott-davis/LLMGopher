@@ -6,7 +6,8 @@ import {
   extractGatewayErrorMessage,
   parseAPIKeyFormValues,
 } from "@/lib/action-helpers";
-import { GatewayErrorEnvelope, Model } from "@/lib/types";
+import { parseAPIKeyBudget, parseAPIKeyBudgetFormValues } from "@/lib/budget";
+import { APIKeyBudgetState, GatewayErrorEnvelope, Model } from "@/lib/types";
 
 const GATEWAY_BASE = "http://gateway:8080";
 const CREATE_MODEL_ENDPOINT = `${GATEWAY_BASE}/v1/admin/models`;
@@ -14,6 +15,24 @@ const GET_MODELS_ENDPOINT = `${GATEWAY_BASE}/v1/admin/models`;
 const CREATE_PROVIDER_ENDPOINT = `${GATEWAY_BASE}/v1/admin/providers`;
 const GET_PROVIDERS_ENDPOINT = `${GATEWAY_BASE}/v1/admin/providers`;
 const CREATE_API_KEY_ENDPOINT = "http://gateway:8080/v1/admin/keys";
+const BUDGET_AUTH_MESSAGE =
+  "Budget controls are unavailable. Set LLMGOPHER_UI_ADMIN_API_KEY for the UI service.";
+
+function getBudgetAdminToken(): string {
+  const token = process.env.LLMGOPHER_UI_ADMIN_API_KEY?.trim();
+  if (!token) {
+    throw new Error(BUDGET_AUTH_MESSAGE);
+  }
+  return token;
+}
+
+function buildBudgetEndpoint(apiKeyID: string): string {
+  return `${CREATE_API_KEY_ENDPOINT}/${encodeURIComponent(apiKeyID)}/budget`;
+}
+
+function buildBudgetResetEndpoint(apiKeyID: string): string {
+  return `${CREATE_API_KEY_ENDPOINT}/${encodeURIComponent(apiKeyID)}/budget/reset`;
+}
 
 export async function createModel(formData: FormData) {
   const alias = String(formData.get("alias") ?? "").trim();
@@ -467,4 +486,121 @@ export async function waitForAPIKeyDeletionSync(
   }
 
   return false;
+}
+
+export async function fetchAPIKeyBudget(apiKeyID: string): Promise<APIKeyBudgetState> {
+  if (!apiKeyID) {
+    return { status: "unavailable", message: "API key id is required" };
+  }
+
+  let token: string;
+  try {
+    token = getBudgetAdminToken();
+  } catch (error) {
+    return {
+      status: "unavailable",
+      message: error instanceof Error ? error.message : BUDGET_AUTH_MESSAGE,
+    };
+  }
+
+  try {
+    const response = await fetch(buildBudgetEndpoint(apiKeyID), {
+      cache: "no-store",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (response.status === 404) {
+      return { status: "unbudgeted" };
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return {
+        status: "unavailable",
+        message: "Budget access is unauthorized. Check the UI admin API key.",
+      };
+    }
+
+    if (!response.ok) {
+      return {
+        status: "unavailable",
+        message: await readGatewayError(response, "Failed to load budget state"),
+      };
+    }
+
+    const payload = (await response.json()) as unknown;
+    const budget = parseAPIKeyBudget(payload);
+    return { status: "configured", budget };
+  } catch (error) {
+    return {
+      status: "unavailable",
+      message: error instanceof Error ? error.message : "Failed to load budget state",
+    };
+  }
+}
+
+export async function upsertAPIKeyBudget(apiKeyID: string, formData: FormData) {
+  if (!apiKeyID) {
+    throw new Error("API key id is required");
+  }
+
+  const token = getBudgetAdminToken();
+  const values = parseAPIKeyBudgetFormValues(formData);
+  const response = await fetch(buildBudgetEndpoint(apiKeyID), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(values),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readGatewayError(response, "Failed to save budget"));
+  }
+
+  revalidatePath("/keys");
+  return parseAPIKeyBudget((await response.json()) as unknown);
+}
+
+export async function resetAPIKeyBudget(apiKeyID: string) {
+  if (!apiKeyID) {
+    throw new Error("API key id is required");
+  }
+
+  const token = getBudgetAdminToken();
+  const response = await fetch(buildBudgetResetEndpoint(apiKeyID), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readGatewayError(response, "Failed to reset budget"));
+  }
+
+  revalidatePath("/keys");
+  return parseAPIKeyBudget((await response.json()) as unknown);
+}
+
+export async function deleteAPIKeyBudget(apiKeyID: string) {
+  if (!apiKeyID) {
+    throw new Error("API key id is required");
+  }
+
+  const token = getBudgetAdminToken();
+  const response = await fetch(buildBudgetEndpoint(apiKeyID), {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readGatewayError(response, "Failed to remove budget"));
+  }
+
+  revalidatePath("/keys");
 }
