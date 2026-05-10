@@ -93,7 +93,115 @@ test.describe("visual — models", () => {
   });
 });
 
-// Remaining snapshot targets (add as pages ship):
-// - Routes (each strategy variant)  → test.fixme until routes page ships
-// - Logs (mixed / fallback / empty) → test.fixme until logs page ships
-// - Teams, Budgets, Rate limits, Guardrails, Audit, Settings → test.fixme
+test.describe("visual — logs", () => {
+  test.beforeEach(async ({ request }) => {
+    await request.post(`${MOCK_BASE_URL}/__reset`);
+  });
+
+  test("logs page — mixed rows", async ({ page, eyes }) => {
+    await disableAnimations(page);
+    await page.goto("/logs");
+    await eyes.check("logs-mixed", {
+      ignoreRegions: IGNORE_REGIONS,
+      layoutRegions: LAYOUT_REGIONS,
+    });
+  });
+
+  test("logs page — fallback filter", async ({ page, eyes }) => {
+    await disableAnimations(page);
+    await page.goto("/logs?status=fallback");
+    await eyes.check("logs-fallback-filter", {
+      ignoreRegions: IGNORE_REGIONS,
+      layoutRegions: LAYOUT_REGIONS,
+    });
+  });
+
+  test("logs page — request inspector open", async ({ page, eyes }) => {
+    await disableAnimations(page);
+    await page.goto("/logs");
+    await page.getByTestId("log-row-log_fallback").click();
+    await page.getByTestId("request-inspector").waitFor({ state: "visible" });
+    await eyes.check("logs-inspector-trace", {
+      ignoreRegions: IGNORE_REGIONS,
+    });
+  });
+});
+
+test.describe("visual — audit", () => {
+  test.beforeEach(async ({ request }) => {
+    await request.post(`${MOCK_BASE_URL}/__reset`);
+  });
+
+  test("audit page — populated", async ({ page, eyes }) => {
+    await disableAnimations(page);
+    await page.goto("/audit");
+    await eyes.check("audit-populated", {
+      ignoreRegions: IGNORE_REGIONS,
+      layoutRegions: LAYOUT_REGIONS,
+    });
+  });
+});
+
+test.describe("visual — routes", () => {
+  test("routes page — all strategies visible", async ({ page, eyes }) => {
+    await disableAnimations(page);
+    await page.goto("/routes");
+    await eyes.check("routes-all", {
+      ignoreRegions: IGNORE_REGIONS,
+    });
+  });
+});
+
+test.describe("visual — guardrails", () => {
+  test.beforeEach(async ({ request }) => {
+    await request.post(`${MOCK_BASE_URL}/__reset`);
+  });
+
+  test("guardrails page — mixed enabled/disabled state", async ({ page, eyes }) => {
+    await disableAnimations(page);
+    await page.goto("/guardrails");
+    await eyes.check("guardrails-mixed", {
+      ignoreRegions: IGNORE_REGIONS,
+    });
+  });
+});
+
+test.describe("visual — teams", () => {
+  test("teams page — populated with near-cap warning", async ({ page, eyes }) => {
+    await disableAnimations(page);
+    await page.goto("/teams");
+    await eyes.check("teams-populated", {
+      ignoreRegions: IGNORE_REGIONS,
+    });
+  });
+});
+
+test.describe("visual — budgets", () => {
+  test("budgets page — near cap and normal states", async ({ page, eyes }) => {
+    await disableAnimations(page);
+    await page.goto("/budgets");
+    await eyes.check("budgets-near-cap", {
+      ignoreRegions: IGNORE_REGIONS,
+    });
+  });
+});
+
+test.describe("visual — rate limits", () => {
+  test("rate limits page — one rule tripped", async ({ page, eyes }) => {
+    await disableAnimations(page);
+    await page.goto("/rate-limits");
+    await eyes.check("rate-limits-tripped", {
+      ignoreRegions: IGNORE_REGIONS,
+    });
+  });
+});
+
+test.describe("visual — settings", () => {
+  test("settings page — all four cards", async ({ page, eyes }) => {
+    await disableAnimations(page);
+    await page.goto("/settings");
+    await eyes.check("settings-all-cards", {
+      ignoreRegions: IGNORE_REGIONS,
+    });
+  });
+});

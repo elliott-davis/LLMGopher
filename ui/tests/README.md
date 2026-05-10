@@ -30,7 +30,25 @@ npm run test:e2e:ui
 
 # Run a single spec
 npx playwright test tests/e2e/providers.spec.ts
+
+# Run all eight replacement surfaces
+npm run test:e2e -- tests/e2e/logs.spec.ts tests/e2e/audit.spec.ts tests/e2e/routes.spec.ts tests/e2e/guardrails.spec.ts tests/e2e/teams.spec.ts tests/e2e/budgets.spec.ts tests/e2e/rate-limits.spec.ts tests/e2e/settings.spec.ts
 ```
+
+## Replacement Surfaces
+
+All eight previously-placeholder pages now have functional implementations and focused E2E coverage.
+
+| Route | Spec file | Key selectors | Notes |
+|-------|-----------|---------------|-------|
+| `/logs` | `logs.spec.ts` | `log-row-{id}`, `filter-status-{group}`, `request-inspector`, `inspector-tab-{tab}`, `timeline-stage-primary` | Status filter encodes in URL. Inspector fetches detail via `/api/logs/[id]`. |
+| `/audit` | `audit.spec.ts` | `audit-row-{id}`, `audit-filter-actor`, `audit-filter-from`, `audit-filter-to`, `audit-filter-apply` | Actor/date filters encode in URL. Newest-first order. Error summaries redacted. |
+| `/routes` | `routes.spec.ts` | `route-row-{id}`, `strategy-{name}`, `strategy-view-{name}`, `route-detail-panel`, `route-save-unavailable` | Read-only in production. Mutation returns 501 from mock. |
+| `/guardrails` | `guardrails.spec.ts` | `guardrail-row-{id}`, `guardrail-toggle-{id}` | Toggle sends PATCH to mock. Optimistic update with revert on failure. |
+| `/teams` | `teams.spec.ts` | `team-row-{id}`, `team-{id}-warn` | `team-research-warn` visible at 86% utilization (threshold 85%). |
+| `/budgets` | `budgets.spec.ts` | `team-{scope_id}-budget`, `team-{scope_id}-warn` | Near-cap/over-cap states computed from utilization vs. alert threshold. |
+| `/rate-limits` | `rate-limits.spec.ts` | `rate-limit-row-{id}`, `rate-limit-tripped-pill` | Exactly one tripped rule in seed fixtures (`rl_tripped`). |
+| `/settings` | `settings.spec.ts` | `settings-card-{id}`, `settings-card-unavailable`, `settings-card-save`, `settings-card-success` | Display card is editable; other cards are unavailable. |
 
 ## Conventions (from research.md)
 

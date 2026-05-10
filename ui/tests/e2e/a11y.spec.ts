@@ -28,10 +28,12 @@ const DISABLED_RULES = [
   "select-name",
 ];
 
-const IMPLEMENTED_ROUTES = ["/", "/providers", "/models", "/keys", "/usage"];
-
-// "Coming soon" pages are included to assert zero violations on stub state.
-const STUB_ROUTES = [
+const IMPLEMENTED_ROUTES = [
+  "/",
+  "/providers",
+  "/models",
+  "/keys",
+  "/usage",
   "/logs",
   "/audit",
   "/routes",
@@ -42,7 +44,7 @@ const STUB_ROUTES = [
   "/settings",
 ];
 
-const ALL_ROUTES = [...IMPLEMENTED_ROUTES, ...STUB_ROUTES];
+const ALL_ROUTES = IMPLEMENTED_ROUTES;
 
 for (const route of ALL_ROUTES) {
   test(`axe: zero violations on ${route}`, async ({ page }) => {

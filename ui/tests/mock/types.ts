@@ -44,6 +44,8 @@ export interface MockGuardrail {
   enabled: boolean;
 }
 
+export type { RoutePolicy, RouteTarget, SettingCard, SettingField } from '../../src/lib/admin-surface-contracts';
+
 export interface LogProviderStage {
   provider_id: string;
   status: "ok" | "failed";

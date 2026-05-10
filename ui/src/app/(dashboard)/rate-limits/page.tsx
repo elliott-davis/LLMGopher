@@ -1,10 +1,7 @@
-export default function RateLimitsPage() {
-  return (
-    <div className="page-head">
-      <div>
-        <h1>Rate Limits</h1>
-        <p className="sub">Coming soon.</p>
-      </div>
-    </div>
-  );
+import { fetchRateLimits } from '@/components/rate-limits/rate-limits-data';
+import { RateLimitsClient } from '@/components/rate-limits/rate-limits-client';
+
+export default async function RateLimitsPage() {
+  const { rules, unavailable } = await fetchRateLimits();
+  return <RateLimitsClient rules={rules} unavailable={unavailable} />;
 }

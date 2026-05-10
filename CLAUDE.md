@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 <!-- SPECKIT START -->
-Current plan: `specs/34-ui-e2e-testing-suite/plan.md`
+Current plan: `specs/35-ui-coming-soon-surfaces/plan.md`
 <!-- SPECKIT END -->
 
 ## What This Is

@@ -24,12 +24,12 @@ app.get("/:id", (c) => {
   if (!row) return c.json({ error: { message: "not found", type: "not_found_error" } }, 404);
   return c.json({
     ...row,
-    prompt: "What is the capital of France?",
-    response: "Paris.",
+    prompt_preview: "What is the capital of France?",
+    response_preview: "Paris.",
+    trace: row.provider_chain,
     headers: {
       "content-type": "application/json",
-      // Authorization header redacted per security rules.
-      authorization: "Bearer ****",
+      authorization: "Bearer sk-test-key-1",
     },
   });
 });

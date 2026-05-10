@@ -259,6 +259,29 @@ Block PR merge on:
 
 ---
 
+## Shipped Surface States
+
+The following surfaces have moved from `Coming soon.` stubs to functional implementations:
+
+| Surface | Functional coverage | Mock-backed writes | Production writes |
+|---------|--------------------|--------------------|-------------------|
+| Logs | ✓ filter, inspector, redaction | read-only | needs contract reconciliation |
+| Audit | ✓ filter, URL state, ordering | read-only | needs contract reconciliation |
+| Routes | ✓ strategy view, read-only inspection | 501 (intentional) | needs contract reconciliation |
+| Guardrails | ✓ toggle, optimistic update | PATCH /guardrails/:id | aligned with existing contract |
+| Teams | ✓ utilization, near-cap display | read-only | needs contract reconciliation |
+| Budgets | ✓ near-cap/over-cap display | PATCH /budgets/:scope/:scope_id | needs contract reconciliation |
+| Rate Limits | ✓ tripped state, rule list | CRUD | needs contract reconciliation |
+| Settings | ✓ four cards, display save | PATCH /settings/display | other cards unavailable |
+
+### Remaining API-only capabilities (follow-up triggers)
+
+- Route mutation (create, update, delete) — unblocked by admin route mutation contract.
+- Guardrail CRUD beyond toggle — unblocked by full guardrail admin contract.
+- Team budget create/delete — unblocked by team budget write contract.
+- Rate limit team-scope TPM enforcement — unblocked by production TPM enforcement confirmation.
+- Settings: Gateway Profile, Security, Notifications — unblocked by gateway configuration API.
+
 ## What NOT to test visually
 
 - The live request flow strip (animated, non-deterministic) — assert structure functionally instead (`6 stages rendered`, `pulse spawns at expected interval`)

@@ -1,10 +1,7 @@
-export default function SettingsPage() {
-  return (
-    <div className="page-head">
-      <div>
-        <h1>Settings</h1>
-        <p className="sub">Coming soon.</p>
-      </div>
-    </div>
-  );
+import { fetchSettings } from '@/components/settings/settings-data';
+import { SettingsClient } from '@/components/settings/settings-client';
+
+export default async function SettingsPage() {
+  const { cards, unavailable } = await fetchSettings();
+  return <SettingsClient cards={cards} unavailable={unavailable} />;
 }

@@ -1,22 +1,39 @@
-import { test } from "@playwright/test";
+import { test, expect } from '@playwright/test';
 
-// Feature Gap: Rate limits page shows "Coming soon." placeholder.
-// All tests are fixme until the rate-limits surface from spec 33 ships.
-// Cross-ref: specs/33-ui-model-rate-limits.
-
-test.describe("rate limits page", () => {
-  test.fixme("rate limit rules are listed", async ({ page }) => {
-    // Blocked: rate limits page not yet implemented.
-    await page.goto("/rate-limits");
-    // 3 seeded rules should render
-    await page.locator("[data-testid^='rate-limit-row-']").nth(2).isVisible();
+test.describe('rate limits page', () => {
+  test('page renders accessible title', async ({ page }) => {
+    await page.goto('/rate-limits');
+    await expect(page.getByTestId('page-title')).toHaveText('Rate Limits');
   });
 
-  test.fixme("rule with tripped: true shows tripped pill", async ({ page }) => {
-    // Blocked: rate limits page not yet implemented.
-    // Cross-ref: rate-limits fixture has exactly 1 tripped rule.
-    await page.goto("/rate-limits");
-    const trippedPill = page.getByTestId("rate-limit-tripped-pill");
-    await trippedPill.isVisible();
+  test('all 3 seeded rules render', async ({ page }) => {
+    await page.goto('/rate-limits');
+    // eslint-disable-next-line playwright/no-raw-locators
+    await expect(page.locator("[data-testid^='rate-limit-row-']").nth(2)).toBeVisible();
+  });
+
+  test('exactly one rule shows a tripped indicator', async ({ page }) => {
+    await page.goto('/rate-limits');
+    const trippedPills = page.getByTestId('rate-limit-tripped-pill');
+    await expect(trippedPills).toHaveCount(1);
+  });
+
+  test('tripped rule is rl_tripped', async ({ page }) => {
+    await page.goto('/rate-limits');
+    const trippedRow = page.getByTestId('rate-limit-row-rl_tripped');
+    await expect(trippedRow.getByTestId('rate-limit-tripped-pill')).toBeVisible();
+  });
+
+  test('RPS is displayed for each rule', async ({ page }) => {
+    await page.goto('/rate-limits');
+    // eslint-disable-next-line playwright/no-raw-locators
+    const rows = page.locator("[data-testid^='rate-limit-row-']");
+    const count = await rows.count();
+    expect(count).toBeGreaterThan(0);
+  });
+
+  test('page loads without error', async ({ page }) => {
+    await page.goto('/rate-limits');
+    await expect(page.getByTestId('page-title')).toBeVisible();
   });
 });

@@ -1,10 +1,7 @@
-export default function RoutesPage() {
-  return (
-    <div className="page-head">
-      <div>
-        <h1>Routes</h1>
-        <p className="sub">Coming soon.</p>
-      </div>
-    </div>
-  );
+import { fetchRoutes } from '@/components/routes/routes-data';
+import { RoutesClient } from '@/components/routes/routes-client';
+
+export default async function RoutesPage() {
+  const { routes, unavailable } = await fetchRoutes();
+  return <RoutesClient routes={routes} unavailable={unavailable} />;
 }

@@ -12,6 +12,8 @@ import logs from "./handlers/admin-logs";
 import audit from "./handlers/admin-audit";
 import chatCompletions from "./handlers/chat-completions";
 import usage from "./handlers/admin-usage";
+import routes from "./handlers/admin-routes";
+import settings from "./handlers/admin-settings";
 import { MOCK_PORT } from "../support/mock-port";
 
 const app = new Hono();
@@ -51,6 +53,8 @@ app.route("/v1/admin/guardrails",  guardrails);
 app.route("/v1/admin/logs",        logs);
 app.route("/v1/admin/audit",       audit);
 app.route("/v1/admin/usage",       usage);
+app.route("/v1/admin/routes",      routes);
+app.route("/v1/admin/settings",    settings);
 app.route("/v1/chat/completions",  chatCompletions);
 
 // Start server when run directly: node tests/mock/server.ts

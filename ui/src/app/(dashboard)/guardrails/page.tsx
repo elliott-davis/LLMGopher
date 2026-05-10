@@ -1,10 +1,7 @@
-export default function GuardrailsPage() {
-  return (
-    <div className="page-head">
-      <div>
-        <h1>Guardrails</h1>
-        <p className="sub">Coming soon.</p>
-      </div>
-    </div>
-  );
+import { fetchGuardrails } from '@/components/guardrails/guardrails-data';
+import { GuardrailsClient } from '@/components/guardrails/guardrails-client';
+
+export default async function GuardrailsPage() {
+  const { guardrails, unavailable } = await fetchGuardrails();
+  return <GuardrailsClient guardrails={guardrails} unavailable={unavailable} />;
 }
