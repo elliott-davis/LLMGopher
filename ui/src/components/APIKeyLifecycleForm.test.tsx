@@ -11,6 +11,7 @@ const models: Model[] = [
     name: "gpt-4o-2024-11-20",
     provider_id: "openai",
     context_window: 128000,
+    rate_limit_rps: 0,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
   },

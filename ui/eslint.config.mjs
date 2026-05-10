@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FlatCompat } from "@eslint/eslintrc";
 import { defineConfig, globalIgnores } from "eslint/config";
+import playwright from "eslint-plugin-playwright";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,4 +24,15 @@ const eslintConfig = defineConfig([
   ]),
 ]);
 
-export default eslintConfig;
+// Playwright: enforce role/label-first selectors in E2E specs (Decision 3, research.md)
+const playwrightConfig = {
+  files: ["tests/e2e/**/*.spec.ts"],
+  ...playwright.configs["flat/recommended"],
+  rules: {
+    ...playwright.configs["flat/recommended"].rules,
+    // Prefer getByRole/getByLabel over raw CSS/XPath
+    "playwright/no-raw-locators": "error",
+  },
+};
+
+export default [...eslintConfig, playwrightConfig];

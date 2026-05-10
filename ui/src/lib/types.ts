@@ -48,6 +48,7 @@ export interface Model {
   name: string;
   alias: string;
   context_window: number;
+  rate_limit_rps: number;
   created_at: string;
   updated_at: string;
 }

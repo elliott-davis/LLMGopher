@@ -5,16 +5,18 @@ import { revalidatePath } from "next/cache";
 import {
   extractGatewayErrorMessage,
   parseAPIKeyFormValues,
+  parseModelFormValues,
 } from "@/lib/action-helpers";
 import { parseAPIKeyBudget, parseAPIKeyBudgetFormValues } from "@/lib/budget";
 import { APIKeyBudgetState, GatewayErrorEnvelope, Model } from "@/lib/types";
 
-const GATEWAY_BASE = "http://gateway:8080";
+const GATEWAY_BASE =
+  process.env.LLMGOPHER_GATEWAY_BASE ?? "http://gateway:8080";
 const CREATE_MODEL_ENDPOINT = `${GATEWAY_BASE}/v1/admin/models`;
 const GET_MODELS_ENDPOINT = `${GATEWAY_BASE}/v1/admin/models`;
 const CREATE_PROVIDER_ENDPOINT = `${GATEWAY_BASE}/v1/admin/providers`;
 const GET_PROVIDERS_ENDPOINT = `${GATEWAY_BASE}/v1/admin/providers`;
-const CREATE_API_KEY_ENDPOINT = "http://gateway:8080/v1/admin/keys";
+const CREATE_API_KEY_ENDPOINT = `${GATEWAY_BASE}/v1/admin/keys`;
 const BUDGET_AUTH_MESSAGE =
   "Budget controls are unavailable. Set LLMGOPHER_UI_ADMIN_API_KEY for the UI service.";
 
@@ -35,43 +37,28 @@ function buildBudgetResetEndpoint(apiKeyID: string): string {
 }
 
 export async function createModel(formData: FormData) {
-  const alias = String(formData.get("alias") ?? "").trim();
-  const name = String(formData.get("name") ?? "").trim();
-  const providerID = String(formData.get("provider_id") ?? "").trim();
-  const contextWindow = Number(String(formData.get("context_window") ?? "").trim());
-
-  if (!alias || !name || !providerID || !Number.isFinite(contextWindow) || contextWindow <= 0) {
-    throw new Error("Invalid model form data");
-  }
+  const values = parseModelFormValues(formData);
 
   const response = await fetch(CREATE_MODEL_ENDPOINT, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      alias,
-      name,
-      provider_id: providerID,
-      context_window: contextWindow,
-    }),
+    body: JSON.stringify(values),
   });
 
   if (!response.ok) {
-    throw new Error("Failed to create model");
+    throw new Error(await readGatewayError(response, "Failed to create model"));
   }
 
   revalidatePath("/models");
 }
 
 export async function updateModel(id: string, formData: FormData) {
-  const alias = String(formData.get("alias") ?? "").trim();
-  const name = String(formData.get("name") ?? "").trim();
-  const providerID = String(formData.get("provider_id") ?? "").trim();
-  const contextWindow = Number(String(formData.get("context_window") ?? "").trim());
+  const values = parseModelFormValues(formData);
 
-  if (!id || !alias || !name || !providerID || !Number.isFinite(contextWindow) || contextWindow <= 0) {
-    throw new Error("Invalid model form data");
+  if (!id) {
+    throw new Error("Model id is required");
   }
 
   const response = await fetch(`${GATEWAY_BASE}/v1/admin/models/${encodeURIComponent(id)}`, {
@@ -79,16 +66,11 @@ export async function updateModel(id: string, formData: FormData) {
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      alias,
-      name,
-      provider_id: providerID,
-      context_window: contextWindow,
-    }),
+    body: JSON.stringify(values),
   });
 
   if (!response.ok) {
-    throw new Error("Failed to update model");
+    throw new Error(await readGatewayError(response, "Failed to update model"));
   }
 
   revalidatePath("/models");

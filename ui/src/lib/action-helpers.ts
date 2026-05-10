@@ -1,5 +1,13 @@
 import { APIKeyFormValues } from "@/lib/types";
 
+export type ModelFormValues = {
+  alias: string;
+  name: string;
+  provider_id: string;
+  context_window: number;
+  rate_limit_rps: number;
+};
+
 export function extractGatewayErrorMessage(payload: unknown, fallback: string): string {
   if (typeof payload !== "object" || payload === null) {
     return fallback;
@@ -100,5 +108,40 @@ export function parseAPIKeyFormValues(formData: FormData): APIKeyFormValues {
           is_active:
             String(isActiveValue) === "true" || String(isActiveValue) === "on",
         }),
+  };
+}
+
+export function parseModelFormValues(formData: FormData): ModelFormValues {
+  const alias = String(formData.get("alias") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const providerID = String(formData.get("provider_id") ?? "").trim();
+  const contextWindow = Number(String(formData.get("context_window") ?? "").trim());
+  const rateLimitText = String(formData.get("rate_limit_rps") ?? "").trim();
+  const rateLimitRPS = rateLimitText === "" ? 0 : Number(rateLimitText);
+
+  if (
+    !alias ||
+    !name ||
+    !providerID ||
+    !Number.isFinite(contextWindow) ||
+    contextWindow <= 0
+  ) {
+    throw new Error("Invalid model form data");
+  }
+
+  if (
+    !Number.isFinite(rateLimitRPS) ||
+    rateLimitRPS < 0 ||
+    !Number.isInteger(rateLimitRPS)
+  ) {
+    throw new Error("Model rate limit must be a non-negative whole number");
+  }
+
+  return {
+    alias,
+    name,
+    provider_id: providerID,
+    context_window: contextWindow,
+    rate_limit_rps: rateLimitRPS,
   };
 }

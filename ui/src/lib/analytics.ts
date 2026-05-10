@@ -8,7 +8,8 @@ import {
   UsageSummaryResponse,
 } from "@/lib/types";
 
-const GATEWAY_BASE = "http://gateway:8080";
+const GATEWAY_BASE =
+  process.env.LLMGOPHER_GATEWAY_BASE ?? "http://gateway:8080";
 const USAGE_ENDPOINT = `${GATEWAY_BASE}/v1/admin/usage`;
 const DAILY_USAGE_ENDPOINT = `${GATEWAY_BASE}/v1/admin/usage/daily`;
 const AUDIT_ENDPOINT = `${GATEWAY_BASE}/v1/admin/audit`;

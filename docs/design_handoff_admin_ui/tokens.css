@@ -1,0 +1,84 @@
+/* LLMGopher Admin — design tokens
+   Drop into ui/src/styles/tokens.css and import globally.
+   Toggle theme by setting data-theme="dark" on <html>.
+   Toggle density by setting data-density="compact" on <html>.
+*/
+
+:root {
+  /* Type */
+  --font-sans: "Inter", system-ui, -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Surfaces */
+  --bg:         oklch(0.985 0.003 240);
+  --bg-elev:    oklch(1 0 0);
+  --bg-sunken:  oklch(0.965 0.004 240);
+  --bg-hover:   oklch(0.955 0.005 240);
+  --bg-active:  oklch(0.94 0.006 240);
+
+  /* Lines */
+  --border:        oklch(0.91 0.006 240);
+  --border-strong: oklch(0.85 0.008 240);
+
+  /* Foreground */
+  --fg:        oklch(0.22 0.01 240);
+  --fg-muted:  oklch(0.48 0.01 240);
+  --fg-subtle: oklch(0.62 0.008 240);
+
+  /* Brand — Go gopher cyan */
+  --brand:             #00ADD8;
+  --brand-ink:         #006B86;
+  --brand-soft:        oklch(0.95 0.04 220);
+  --brand-soft-border: oklch(0.86 0.07 220);
+
+  /* Status */
+  --success:      oklch(0.62 0.13 155);
+  --success-soft: oklch(0.95 0.04 155);
+  --warn:         oklch(0.72 0.14 75);
+  --warn-soft:    oklch(0.96 0.05 80);
+  --danger:       oklch(0.58 0.20 27);
+  --danger-soft:  oklch(0.96 0.04 27);
+  --info:         oklch(0.6 0.13 240);
+
+  /* Radii */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+
+  /* Density (overridden by [data-density="compact"]) */
+  --row-h: 44px;
+  --pad-x: 16px;
+  --pad-y: 12px;
+
+  /* Shadows */
+  --shadow-1:   0 1px 0 oklch(0.92 0.005 240);
+  --shadow-2:   0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.04);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="dark"] {
+  --bg:         oklch(0.18 0.012 240);
+  --bg-elev:    oklch(0.21 0.013 240);
+  --bg-sunken:  oklch(0.15 0.011 240);
+  --bg-hover:   oklch(0.24 0.014 240);
+  --bg-active:  oklch(0.27 0.015 240);
+  --border:        oklch(0.30 0.014 240);
+  --border-strong: oklch(0.38 0.016 240);
+  --fg:        oklch(0.96 0.005 240);
+  --fg-muted:  oklch(0.72 0.01 240);
+  --fg-subtle: oklch(0.55 0.012 240);
+  --brand-soft:        oklch(0.32 0.07 220);
+  --brand-soft-border: oklch(0.42 0.10 220);
+  --success-soft: oklch(0.30 0.06 155);
+  --warn-soft:    oklch(0.32 0.08 75);
+  --danger-soft:  oklch(0.30 0.08 27);
+  --shadow-1:   0 1px 0 oklch(0.26 0.012 240);
+  --shadow-2:   0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.25);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+[data-density="compact"] {
+  --row-h: 36px;
+  --pad-x: 12px;
+  --pad-y: 8px;
+}

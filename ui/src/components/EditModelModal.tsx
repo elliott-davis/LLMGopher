@@ -42,6 +42,7 @@ export default function EditModelModal({
   const [isPending, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [providerId, setProviderId] = useState(model.provider_id);
+  const [rateLimitRPS, setRateLimitRPS] = useState(String(model.rate_limit_rps ?? 0));
   const hasProviders = providers.length > 0;
   const submitDisabled = !hasProviders || isPending;
 
@@ -54,8 +55,9 @@ export default function EditModelModal({
   useEffect(() => {
     if (open) {
       setProviderId(model.provider_id);
+      setRateLimitRPS(String(model.rate_limit_rps ?? 0));
     }
-  }, [open, model.provider_id]);
+  }, [open, model.provider_id, model.rate_limit_rps]);
 
   const handleSubmit = (formData: FormData) => {
     setErrorMessage(null);
@@ -84,6 +86,7 @@ export default function EditModelModal({
         onOpenChange(nextOpen);
         if (!nextOpen) {
           setErrorMessage(null);
+          setRateLimitRPS(String(model.rate_limit_rps ?? 0));
         }
       }}
     >
@@ -161,6 +164,24 @@ export default function EditModelModal({
               defaultValue={model.context_window}
               required
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-model-rate-limit-rps">Model Rate Limit (RPS)</Label>
+            <Input
+              id="edit-model-rate-limit-rps"
+              name="rate_limit_rps"
+              type="number"
+              min={0}
+              step={1}
+              value={rateLimitRPS}
+              onChange={(event) => setRateLimitRPS(event.target.value)}
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              Requests per second for this model only. Use 0 for no model-level
+              limit; API key limits are managed separately.
+            </p>
           </div>
 
           <DialogFooter>

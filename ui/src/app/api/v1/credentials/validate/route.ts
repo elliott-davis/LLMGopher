@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
-const GATEWAY_VALIDATE_ENDPOINT = "http://gateway:8080/api/v1/credentials/validate";
+const GATEWAY_BASE =
+  process.env.LLMGOPHER_GATEWAY_BASE ?? "http://gateway:8080";
+const GATEWAY_VALIDATE_ENDPOINT = `${GATEWAY_BASE}/api/v1/credentials/validate`;
 
 type ValidateCredentialBody = {
   provider?: string;

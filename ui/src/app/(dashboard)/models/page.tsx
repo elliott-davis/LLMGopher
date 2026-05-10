@@ -1,5 +1,6 @@
 import Link from "next/link";
 import CreateModelModal from "@/components/CreateModelModal";
+import ModelRateLimitStatus from "@/components/ModelRateLimitStatus";
 import ModelRowActions from "@/components/ModelRowActions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,8 +14,10 @@ import {
 } from "@/components/ui/table";
 import { Model, Provider } from "@/lib/types";
 
-const MODELS_ENDPOINT = "http://gateway:8080/v1/admin/models";
-const PROVIDERS_ENDPOINT = "http://gateway:8080/v1/admin/providers";
+const GATEWAY_BASE =
+  process.env.LLMGOPHER_GATEWAY_BASE ?? "http://gateway:8080";
+const MODELS_ENDPOINT = `${GATEWAY_BASE}/v1/admin/models`;
+const PROVIDERS_ENDPOINT = `${GATEWAY_BASE}/v1/admin/providers`;
 
 async function fetchModels(): Promise<{
   models: Model[];
@@ -62,7 +65,8 @@ export default async function ModelsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Models</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Live model state from the gateway in-memory cache.
+            Live model state from the gateway in-memory cache, including
+            model-level request limits separate from API key limits.
           </p>
           {providersUnavailable ? (
             <p className="mt-1 text-xs text-muted-foreground">
@@ -96,6 +100,7 @@ export default async function ModelsPage() {
                 <TableHead>Name</TableHead>
                 <TableHead>Provider ID</TableHead>
                 <TableHead>Context Window</TableHead>
+                <TableHead>Model Rate Limit</TableHead>
                 <TableHead>Updated</TableHead>
                 <TableHead className="w-[1%]">Actions</TableHead>
               </TableRow>
@@ -103,13 +108,13 @@ export default async function ModelsPage() {
             <TableBody>
               {unavailable ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-muted-foreground">
+                  <TableCell colSpan={7} className="text-muted-foreground">
                     Backend unavailable. Try refreshing in a moment.
                   </TableCell>
                 </TableRow>
               ) : models.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-muted-foreground">
+                  <TableCell colSpan={7} className="text-muted-foreground">
                     No models are currently loaded.
                   </TableCell>
                 </TableRow>
@@ -122,6 +127,9 @@ export default async function ModelsPage() {
                       {model.provider_id}
                     </TableCell>
                     <TableCell>{model.context_window}</TableCell>
+                    <TableCell>
+                      <ModelRateLimitStatus rateLimitRPS={model.rate_limit_rps} />
+                    </TableCell>
                     <TableCell>
                       {new Date(model.updated_at).toLocaleString()}
                     </TableCell>

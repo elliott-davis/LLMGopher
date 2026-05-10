@@ -35,6 +35,7 @@ export default function CreateModelModal({ providers }: CreateModelModalProps) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [rateLimitRPS, setRateLimitRPS] = useState("0");
   const hasProviders = providers.length > 0;
   const submitDisabled = !hasProviders || isPending;
 
@@ -52,6 +53,7 @@ export default function CreateModelModal({ providers }: CreateModelModalProps) {
         try {
           await createModel(formData);
           toast.success("Model created");
+          setRateLimitRPS("0");
           setOpen(false);
           refreshModelsSoon();
         } catch (error) {
@@ -70,6 +72,7 @@ export default function CreateModelModal({ providers }: CreateModelModalProps) {
         setOpen(nextOpen);
         if (!nextOpen) {
           setErrorMessage(null);
+          setRateLimitRPS("0");
         }
       }}
     >
@@ -129,6 +132,24 @@ export default function CreateModelModal({ providers }: CreateModelModalProps) {
               defaultValue={128000}
               required
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="model-rate-limit-rps">Model Rate Limit (RPS)</Label>
+            <Input
+              id="model-rate-limit-rps"
+              name="rate_limit_rps"
+              type="number"
+              min={0}
+              step={1}
+              value={rateLimitRPS}
+              onChange={(event) => setRateLimitRPS(event.target.value)}
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              Requests per second for this model only. Use 0 for no model-level
+              limit; API key limits are managed separately.
+            </p>
           </div>
 
           <DialogFooter>

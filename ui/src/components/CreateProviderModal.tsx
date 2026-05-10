@@ -188,7 +188,7 @@ export default function CreateProviderModal() {
         }
       }}
     >
-      <DialogTrigger render={<Button />}>Add Provider</DialogTrigger>
+      <DialogTrigger render={<Button data-testid="add-provider" />}>Add Provider</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create Provider</DialogTitle>
@@ -292,6 +292,7 @@ export default function CreateProviderModal() {
             </Button>
             <Button
               type="submit"
+              data-testid="provider-create-submit"
               disabled={isPending || isWaitingForSync || isValidatingCredential}
             >
               {isPending || isWaitingForSync || isValidatingCredential

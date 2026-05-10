@@ -19,6 +19,10 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Playwright
+ui/playwright-report/
+ui/test-results/
+
 # Spec Kit generated scaffolding. Keep project-specific metadata and
 # constitution files tracked; regenerate these assets with `make spec-kit-bootstrap`.
 .specify/extensions/

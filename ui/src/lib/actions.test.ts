@@ -6,6 +6,7 @@ vi.mock("next/cache", () => ({
 
 import {
   createAPIKey,
+  createModel,
   deleteAPIKeyBudget,
   deleteAPIKey,
   fetchAPIKeyBudget,
@@ -13,12 +14,14 @@ import {
   setAPIKeyActiveState,
   upsertAPIKeyBudget,
   updateAPIKey,
+  updateModel,
   waitForAPIKeyDeletionSync,
 } from "@/lib/actions";
 import {
   extractGatewayErrorMessage,
   parseAPIKeyFormValues,
   parseAPIKeyMetadata,
+  parseModelFormValues,
 } from "@/lib/action-helpers";
 import { revalidatePath } from "next/cache";
 
@@ -33,6 +36,147 @@ function formData(values: Record<string, string | string[]>) {
   }
   return form;
 }
+
+describe("model actions", () => {
+  beforeEach(() => {
+    vi.mocked(revalidatePath).mockClear();
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  it("parses model form fields with a default no-limit rate policy", () => {
+    expect(
+      parseModelFormValues(
+        formData({
+          alias: " gpt-4o ",
+          name: " gpt-4o-2024-11-20 ",
+          provider_id: " provider-1 ",
+          context_window: "128000",
+        })
+      )
+    ).toEqual({
+      alias: "gpt-4o",
+      name: "gpt-4o-2024-11-20",
+      provider_id: "provider-1",
+      context_window: 128000,
+      rate_limit_rps: 0,
+    });
+  });
+
+  it("rejects negative and non-integer model rate limits", () => {
+    const valid = {
+      alias: "gpt-4o",
+      name: "gpt-4o-2024-11-20",
+      provider_id: "provider-1",
+      context_window: "128000",
+    };
+
+    expect(() =>
+      parseModelFormValues(formData({ ...valid, rate_limit_rps: "-1" }))
+    ).toThrow("Model rate limit must be a non-negative whole number");
+    expect(() =>
+      parseModelFormValues(formData({ ...valid, rate_limit_rps: "1.5" }))
+    ).toThrow("Model rate limit must be a non-negative whole number");
+  });
+
+  it("creates models with rate_limit_rps in the gateway payload", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 201 }));
+
+    await createModel(
+      formData({
+        alias: "gpt-4o",
+        name: "gpt-4o-2024-11-20",
+        provider_id: "provider-1",
+        context_window: "128000",
+        rate_limit_rps: "25",
+      })
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://gateway:8080/v1/admin/models",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          alias: "gpt-4o",
+          name: "gpt-4o-2024-11-20",
+          provider_id: "provider-1",
+          context_window: 128000,
+          rate_limit_rps: 25,
+        }),
+      })
+    );
+    expect(revalidatePath).toHaveBeenCalledWith("/models");
+  });
+
+  it("updates models with rate_limit_rps in the gateway payload", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 200 }));
+
+    await updateModel(
+      "model-1",
+      formData({
+        alias: "gpt-4o",
+        name: "gpt-4o-2024-11-20",
+        provider_id: "provider-1",
+        context_window: "128000",
+        rate_limit_rps: "0",
+      })
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://gateway:8080/v1/admin/models/model-1",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          alias: "gpt-4o",
+          name: "gpt-4o-2024-11-20",
+          provider_id: "provider-1",
+          context_window: 128000,
+          rate_limit_rps: 0,
+        }),
+      })
+    );
+  });
+
+  it("surfaces gateway envelope messages for model create and update failures", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ error: { message: "model rate limit rejected" } }),
+          { status: 400 }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ error: { message: "model rate limit rejected" } }),
+          { status: 400 }
+        )
+      );
+
+    await expect(
+      createModel(
+        formData({
+          alias: "gpt-4o",
+          name: "gpt-4o-2024-11-20",
+          provider_id: "provider-1",
+          context_window: "128000",
+          rate_limit_rps: "3",
+        })
+      )
+    ).rejects.toThrow("model rate limit rejected");
+
+    await expect(
+      updateModel(
+        "model-1",
+        formData({
+          alias: "gpt-4o",
+          name: "gpt-4o-2024-11-20",
+          provider_id: "provider-1",
+          context_window: "128000",
+          rate_limit_rps: "3",
+        })
+      )
+    ).rejects.toThrow("model rate limit rejected");
+  });
+});
 
 describe("API key lifecycle actions", () => {
   beforeEach(() => {
@@ -151,8 +295,10 @@ describe("API key lifecycle actions", () => {
   it("deletes keys and reports deletion sync timeout", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
-      .mockResolvedValue(
-        new Response(JSON.stringify([{ id: "key-1" }]), { status: 200 })
+      .mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify([{ id: "key-1" }]), { status: 200 })
+        )
       );
 
     await deleteAPIKey("key-1");

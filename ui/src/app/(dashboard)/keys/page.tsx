@@ -14,8 +14,10 @@ import { describeModelAllowlist } from "@/lib/key-lifecycle";
 import { fetchAPIKeyBudget } from "@/lib/actions";
 import { APIKey, APIKeyBudgetState, Model } from "@/lib/types";
 
-const KEYS_ENDPOINT = "http://gateway:8080/v1/admin/keys";
-const MODELS_ENDPOINT = "http://gateway:8080/v1/admin/models";
+const GATEWAY_BASE =
+  process.env.LLMGOPHER_GATEWAY_BASE ?? "http://gateway:8080";
+const KEYS_ENDPOINT = `${GATEWAY_BASE}/v1/admin/keys`;
+const MODELS_ENDPOINT = `${GATEWAY_BASE}/v1/admin/models`;
 
 async function fetchKeys(): Promise<{ keys: APIKey[]; unavailable: boolean }> {
   try {
@@ -143,7 +145,7 @@ export default async function KeysPage() {
               ) : (
                 keys.map((key) => (
                   // Budget state is loaded server-side and passed into status + action controls.
-                  <TableRow key={key.id}>
+                  <TableRow key={key.id} data-testid={`key-row-${key.id}`}>
                     <TableCell className="font-medium">{key.name}</TableCell>
                     <TableCell className="font-mono text-xs">
                       {key.key_hash}

@@ -72,12 +72,21 @@ export default function ProviderRowActions({ provider }: ProviderRowActionsProps
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" />}>
+        <DropdownMenuTrigger
+          render={
+            <button
+              className="icon-btn"
+              style={{ width: 28, height: 28 }}
+              aria-label="Open actions"
+              data-testid="provider-actions-menu"
+            />
+          }
+        >
           <MoreHorizontal className="size-4" aria-hidden />
-          <span className="sr-only">Open actions</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem
+            data-testid="provider-edit"
             onClick={() => {
               setEditOpen(true);
             }}
@@ -86,6 +95,7 @@ export default function ProviderRowActions({ provider }: ProviderRowActionsProps
             Edit
           </DropdownMenuItem>
           <DropdownMenuItem
+            data-testid="provider-delete"
             variant="destructive"
             onClick={() => {
               setDeleteOpen(true);
@@ -131,6 +141,7 @@ export default function ProviderRowActions({ provider }: ProviderRowActionsProps
               Cancel
             </AlertDialogCancel>
             <Button
+              data-testid="provider-delete-confirm"
               variant="destructive"
               onClick={handleDeleteConfirm}
               disabled={isDeleting || isWaitingForSync}

@@ -119,7 +119,7 @@ export default function APIKeyRowActions({ apiKey, models, budgetState }: APIKey
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="ghost" size="icon" disabled={isToggling} />}
+            render={<Button variant="ghost" size="icon" disabled={isToggling} data-testid="key-actions-menu" />}
           >
             <MoreHorizontal className="size-4" aria-hidden />
             <span className="sr-only">Open actions</span>
@@ -129,7 +129,11 @@ export default function APIKeyRowActions({ apiKey, models, budgetState }: APIKey
               <Pencil className="mr-2 size-4" />
               Edit
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleActiveToggle} disabled={isToggling}>
+            <DropdownMenuItem
+              data-testid={apiKey.is_active ? "key-deactivate" : "key-reactivate"}
+              onClick={handleActiveToggle}
+              disabled={isToggling}
+            >
               {apiKey.is_active ? (
                 <PowerOff className="mr-2 size-4" />
               ) : (
@@ -138,6 +142,7 @@ export default function APIKeyRowActions({ apiKey, models, budgetState }: APIKey
               {apiKey.is_active ? "Deactivate" : "Reactivate"}
             </DropdownMenuItem>
             <DropdownMenuItem
+              data-testid="key-delete"
               variant="destructive"
               onClick={() => setDeleteOpen(true)}
             >
