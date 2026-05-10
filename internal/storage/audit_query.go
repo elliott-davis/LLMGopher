@@ -20,11 +20,17 @@ type AuditQuery struct {
 	APIKeyID string
 	Model    string
 	Provider string
-	Status   string // "success" | "error" | ""
+	Status   string // "success" | "error" | "" — legacy; Outcome takes precedence when set
 	From     *time.Time
 	To       *time.Time
 	Limit    int
 	Offset   int
+
+	// UI-aligned filters (feature 36). When both Outcome and Status are set, Outcome wins.
+	// Actor is not a separate field; the handler normalises the "actor" query param into APIKeyID.
+	Action      string // "request:" family prefix or "request:{model}" exact selector
+	ActionExact bool   // true when Action encodes an exact model (e.g. "request:gpt-4o")
+	Outcome     string // one of: success, client_error, unauthorized, rate_limited, budget_denied, failure
 }
 
 // AuditQueryResult is the query payload plus total count.
@@ -67,11 +73,37 @@ func QueryAuditLog(ctx context.Context, db *sql.DB, q AuditQuery) (*AuditQueryRe
 	if q.Provider != "" {
 		addArg("provider = $%d", q.Provider)
 	}
-	switch q.Status {
-	case "success":
-		whereParts = append(whereParts, "status_code < 400")
-	case "error":
-		whereParts = append(whereParts, "status_code >= 400")
+	if q.Action != "" && strings.HasPrefix(q.Action, "request:") {
+		modelPart := strings.TrimPrefix(q.Action, "request:")
+		if q.ActionExact && modelPart != "" {
+			addArg("model = $%d", modelPart)
+		} else {
+			whereParts = append(whereParts, "model IS NOT NULL")
+		}
+	}
+
+	if q.Outcome != "" {
+		switch q.Outcome {
+		case "success":
+			whereParts = append(whereParts, "status_code < 400")
+		case "unauthorized":
+			whereParts = append(whereParts, "(status_code = 401 OR status_code = 403)")
+		case "budget_denied":
+			whereParts = append(whereParts, "(status_code = 429 AND error_message ILIKE '%budget%')")
+		case "rate_limited":
+			whereParts = append(whereParts, "(status_code = 429 AND error_message NOT ILIKE '%budget%')")
+		case "client_error":
+			whereParts = append(whereParts, "(status_code >= 400 AND status_code < 500 AND status_code NOT IN (401, 403, 429))")
+		case "failure":
+			whereParts = append(whereParts, "status_code >= 500")
+		}
+	} else {
+		switch q.Status {
+		case "success":
+			whereParts = append(whereParts, "status_code < 400")
+		case "error":
+			whereParts = append(whereParts, "status_code >= 400")
+		}
 	}
 	if q.From != nil {
 		addArg("created_at >= $%d", *q.From)

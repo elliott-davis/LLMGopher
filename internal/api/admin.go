@@ -74,28 +74,41 @@ func HandleGetProviders(cache *storage.StateCache) http.HandlerFunc {
 	}
 }
 
+// referenceSummary describes a missing or unresolvable entity referenced by an audit row.
+type referenceSummary struct {
+	Field      string `json:"field"`
+	OriginalID string `json:"original_id"`
+	State      string `json:"state"` // "missing" | "unknown"
+}
+
 type auditEntryResponse struct {
-	ID           int64     `json:"id"`
-	RequestID    string    `json:"request_id"`
-	APIKeyID     string    `json:"api_key_id"`
-	Model        string    `json:"model"`
-	Provider     string    `json:"provider"`
-	PromptTokens int       `json:"prompt_tokens"`
-	OutputTokens int       `json:"output_tokens"`
-	TotalTokens  int       `json:"total_tokens"`
-	CostUSD      float64   `json:"cost_usd"`
-	StatusCode   int       `json:"status_code"`
-	LatencyMS    int64     `json:"latency_ms"`
-	Streaming    bool      `json:"streaming"`
-	ErrorMessage string    `json:"error_message"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID               int64              `json:"id"`
+	RequestID        string             `json:"request_id"`
+	APIKeyID         string             `json:"api_key_id"` // deprecated alias of ActorID
+	ActorID          string             `json:"actor_id"`
+	Action           string             `json:"action"`
+	Model            string             `json:"model"`
+	Provider         string             `json:"provider"`
+	PromptTokens     int                `json:"prompt_tokens"`
+	OutputTokens     int                `json:"output_tokens"`
+	TotalTokens      int                `json:"total_tokens"`
+	CostUSD          float64            `json:"cost_usd"`
+	StatusCode       int                `json:"status_code"`
+	LatencyMS        int64              `json:"latency_ms"`
+	Streaming        bool               `json:"streaming"`
+	ErrorMessage     string             `json:"error_message"`
+	Outcome          string             `json:"outcome"`
+	CreatedAt        time.Time          `json:"created_at"`
+	ReferenceSummary []referenceSummary `json:"reference_summary,omitempty"`
 }
 
 type getAuditLogResponse struct {
-	Data   []auditEntryResponse `json:"data"`
-	Total  int                  `json:"total"`
-	Limit  int                  `json:"limit"`
-	Offset int                  `json:"offset"`
+	Data    []auditEntryResponse `json:"data"`
+	Total   int                  `json:"total"`
+	Limit   int                  `json:"limit"`
+	Offset  int                  `json:"offset"`
+	Page    int                  `json:"page"`
+	HasMore bool                 `json:"has_more"`
 }
 
 const (
@@ -105,6 +118,54 @@ const (
 	auditMaxLimit      = 1000
 )
 
+// Valid outcome filter values accepted by HandleGetAuditLog.
+var validOutcomes = map[string]struct{}{
+	"success":      {},
+	"client_error": {},
+	"unauthorized": {},
+	"rate_limited": {},
+	"budget_denied": {},
+	"failure":      {},
+}
+
+// deriveOutcome maps (statusCode, errorMessage) to the UI-aligned outcome label.
+// errorMessage should be the raw stored value (before redaction) so that the
+// "budget" keyword search is applied to the original text.
+func deriveOutcome(statusCode int, errorMessage string) string {
+	switch {
+	case statusCode < 400:
+		return "success"
+	case statusCode == 401 || statusCode == 403:
+		return "unauthorized"
+	case statusCode == 429:
+		if strings.Contains(strings.ToLower(errorMessage), "budget") {
+			return "budget_denied"
+		}
+		return "rate_limited"
+	case statusCode >= 400 && statusCode < 500:
+		return "client_error"
+	default:
+		return "failure"
+	}
+}
+
+// buildReferenceSummary emits ReferenceSummary entries for any audit row fields
+// that reference missing or unresolvable entities. Only "missing" and "unknown"
+// states are emitted; "deleted" requires tombstone joins deferred to a future feature.
+func buildReferenceSummary(actorID, model, provider string) []referenceSummary {
+	var refs []referenceSummary
+	if actorID == "" {
+		refs = append(refs, referenceSummary{Field: "actor_id", OriginalID: "", State: "missing"})
+	}
+	if model == "" {
+		refs = append(refs, referenceSummary{Field: "model", OriginalID: "", State: "missing"})
+	}
+	if provider == "" {
+		refs = append(refs, referenceSummary{Field: "provider", OriginalID: "", State: "missing"})
+	}
+	return refs
+}
+
 // HandleGetAuditLog returns paginated audit entries from PostgreSQL.
 func HandleGetAuditLog(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -113,22 +174,77 @@ func HandleGetAuditLog(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		query := storage.AuditQuery{
-			APIKeyID: strings.TrimSpace(r.URL.Query().Get("api_key_id")),
-			Model:    strings.TrimSpace(r.URL.Query().Get("model")),
-			Provider: strings.TrimSpace(r.URL.Query().Get("provider")),
-			Limit:    auditDefaultLimit,
-			Offset:   0,
-		}
+		params := r.URL.Query()
 
-		statusFilter := strings.TrimSpace(r.URL.Query().Get("status"))
-		if statusFilter != "" && statusFilter != auditStatusSuccess && statusFilter != auditStatusError {
-			WriteError(w, http.StatusBadRequest, "status must be one of: success, error", "invalid_request_error")
+		// actor / api_key_id mutual exclusion (actor wins, ambiguous = 400)
+		actor := strings.TrimSpace(params.Get("actor"))
+		legacyKeyID := strings.TrimSpace(params.Get("api_key_id"))
+		if actor != "" && legacyKeyID != "" {
+			WriteJSON(w, http.StatusBadRequest, llm.APIError{
+				Error: llm.APIErrorBody{
+					Message: "actor and api_key_id are mutually exclusive; use actor",
+					Type:    "invalid_request_error",
+					Code:    "ambiguous_actor",
+				},
+			})
 			return
 		}
-		query.Status = statusFilter
+		resolvedActorID := actor
+		if resolvedActorID == "" {
+			resolvedActorID = legacyKeyID
+		}
 
-		fromRaw := strings.TrimSpace(r.URL.Query().Get("from"))
+		// action parameter
+		actionRaw := strings.TrimSpace(params.Get("action"))
+		var actionExact bool
+		if actionRaw != "" {
+			// Only "request:" family is supported today.
+			if !strings.HasPrefix(actionRaw, "request:") {
+				WriteError(w, http.StatusBadRequest,
+					"action must start with 'request:' (e.g. 'request:' or 'request:gpt-4o')",
+					"invalid_request_error",
+				)
+				return
+			}
+			modelPart := strings.TrimPrefix(actionRaw, "request:")
+			actionExact = modelPart != ""
+		}
+
+		// outcome parameter (wins over legacy status when both are set)
+		outcomeRaw := strings.TrimSpace(params.Get("outcome"))
+		if outcomeRaw != "" {
+			if _, ok := validOutcomes[outcomeRaw]; !ok {
+				WriteError(w, http.StatusBadRequest,
+					"outcome must be one of: success, client_error, unauthorized, rate_limited, budget_denied, failure",
+					"invalid_request_error",
+				)
+				return
+			}
+		}
+
+		// legacy status (ignored when outcome is set)
+		statusFilter := ""
+		if outcomeRaw == "" {
+			statusFilter = strings.TrimSpace(params.Get("status"))
+			if statusFilter != "" && statusFilter != auditStatusSuccess && statusFilter != auditStatusError {
+				WriteError(w, http.StatusBadRequest, "status must be one of: success, error", "invalid_request_error")
+				return
+			}
+		}
+
+		query := storage.AuditQuery{
+			APIKeyID:    resolvedActorID,
+			Model:       strings.TrimSpace(params.Get("model")),
+			Provider:    strings.TrimSpace(params.Get("provider")),
+			Status:      statusFilter,
+			Action:      actionRaw,
+			ActionExact: actionExact,
+			Outcome:     outcomeRaw,
+			Limit:       auditDefaultLimit,
+			Offset:      0,
+		}
+
+		fromRaw := strings.TrimSpace(params.Get("from"))
 		if fromRaw != "" {
 			from, err := time.Parse(time.RFC3339, fromRaw)
 			if err != nil {
@@ -138,7 +254,7 @@ func HandleGetAuditLog(db *sql.DB) http.HandlerFunc {
 			query.From = &from
 		}
 
-		toRaw := strings.TrimSpace(r.URL.Query().Get("to"))
+		toRaw := strings.TrimSpace(params.Get("to"))
 		if toRaw != "" {
 			to, err := time.Parse(time.RFC3339, toRaw)
 			if err != nil {
@@ -153,7 +269,7 @@ func HandleGetAuditLog(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
+		limitRaw := strings.TrimSpace(params.Get("limit"))
 		if limitRaw != "" {
 			limit, err := strconv.Atoi(limitRaw)
 			if err != nil {
@@ -170,7 +286,7 @@ func HandleGetAuditLog(db *sql.DB) http.HandlerFunc {
 			query.Limit = limit
 		}
 
-		offsetRaw := strings.TrimSpace(r.URL.Query().Get("offset"))
+		offsetRaw := strings.TrimSpace(params.Get("offset"))
 		if offsetRaw != "" {
 			offset, err := strconv.Atoi(offsetRaw)
 			if err != nil {
@@ -198,10 +314,15 @@ func HandleGetAuditLog(db *sql.DB) http.HandlerFunc {
 
 		data := make([]auditEntryResponse, 0, len(result.Data))
 		for _, entry := range result.Data {
-			data = append(data, auditEntryResponse{
+			redacted := storage.RedactErrorMessage(entry.ErrorMessage)
+			outcome := deriveOutcome(entry.StatusCode, entry.ErrorMessage)
+			refs := buildReferenceSummary(entry.APIKeyID, entry.Model, entry.Provider)
+			row := auditEntryResponse{
 				ID:           entry.ID,
 				RequestID:    entry.RequestID,
 				APIKeyID:     entry.APIKeyID,
+				ActorID:      entry.APIKeyID,
+				Action:       "request:" + entry.Model,
 				Model:        entry.Model,
 				Provider:     entry.Provider,
 				PromptTokens: entry.PromptTokens,
@@ -211,16 +332,25 @@ func HandleGetAuditLog(db *sql.DB) http.HandlerFunc {
 				StatusCode:   entry.StatusCode,
 				LatencyMS:    entry.Latency.Milliseconds(),
 				Streaming:    entry.Streaming,
-				ErrorMessage: entry.ErrorMessage,
+				ErrorMessage: redacted,
+				Outcome:      outcome,
 				CreatedAt:    entry.CreatedAt,
-			})
+			}
+			if len(refs) > 0 {
+				row.ReferenceSummary = refs
+			}
+			data = append(data, row)
 		}
 
+		page := query.Offset/query.Limit + 1
+		hasMore := query.Offset+len(data) < result.Total
 		WriteJSON(w, http.StatusOK, getAuditLogResponse{
-			Data:   data,
-			Total:  result.Total,
-			Limit:  query.Limit,
-			Offset: query.Offset,
+			Data:    data,
+			Total:   result.Total,
+			Limit:   query.Limit,
+			Offset:  query.Offset,
+			Page:    page,
+			HasMore: hasMore,
 		})
 	}
 }
