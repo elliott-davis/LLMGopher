@@ -35,7 +35,7 @@ independently.
 **Purpose**: Confirm tooling and baseline state before changing the audit contract.
 
 - [x] T001 Verify local toolchain by running `go vet ./...` and (if available) `golangci-lint run` from the repository root; record any pre-existing warnings so new ones are distinguishable.
-- [ ] T002 [P] Confirm `make dev` brings up gateway + Postgres + Redis + UI and that `GET /v1/admin/audit?limit=1` returns the current legacy shape; capture the baseline JSON for later regression comparison.
+- [x] T002 [P] Confirm `make dev` brings up gateway + Postgres + Redis + UI and that `GET /v1/admin/audit?limit=1` returns the current legacy shape; capture the baseline JSON for later regression comparison.
 
 ---
 
@@ -115,8 +115,8 @@ independently.
 
 - [x] T026 [P] Run `go test ./internal/api/... ./internal/storage/... -count=1` and `go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out | tail -20`; confirm changed files in `internal/api` and `internal/storage` are at or above 80% coverage (Constitution Principle VIII; CLAUDE.md test coverage target).
 - [x] T027 [P] Run `golangci-lint run ./...` (or `go vet ./...` as the documented fallback) and resolve any new warnings introduced by this feature; if a repeatable rule emerges during review, prefer adding a golangci-lint configuration over an LLM-only review note (Constitution Principle VIII; plan's Linter-first enforcement gate).
-- [ ] T028 [P] Run the manual smoke test from `specs/36-admin-audit-ui-contract/quickstart.md` §Manual Smoke Test, including the legacy-parameter curl, the UI-aligned-parameter curl, the redaction case, and the missing-reference case; capture transcripts in the PR description for compatibility review.
-- [ ] T029 [P] Run `( cd ui && npm run test:e2e -- tests/e2e/audit.spec.ts )` against the updated mock backend to confirm the UI's audit page still renders filtered, redacted, newest-first rows with reference-summary annotations.
+- [x] T028 [P] Run the manual smoke test from `specs/36-admin-audit-ui-contract/quickstart.md` §Manual Smoke Test, including the legacy-parameter curl, the UI-aligned-parameter curl, the redaction case, and the missing-reference case; capture transcripts in the PR description for compatibility review.
+- [x] T029 [P] Run `( cd ui && npm run test:e2e -- tests/e2e/audit.spec.ts )` against the updated mock backend to confirm the UI's audit page still renders filtered, redacted, newest-first rows with reference-summary annotations.
 - [x] T030 Review `specs/36-admin-audit-ui-contract/contracts/admin-audit.md` against the implemented response and update if any field name, type, or precedence rule diverged during implementation; the contract document is the source of truth for downstream admin clients (CC-002).
 - [x] T031 Confirm async cost/audit path is unchanged: `internal/proxy/cost_worker.go` still writes raw (un-redacted) rows to `audit_log`; redaction is response-shape-only per research R4 and the constitution's async accounting rule.
 
